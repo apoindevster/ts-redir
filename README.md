@@ -29,7 +29,11 @@ I have found myself from time to time wanting to use my tailnet not for the subn
         - `echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf`
 - Go 1.24 or newer if building from source.
 
-## Running
+## Installation
+
+`go install github.com/apoindevster/ts-redir/cmd/ts-redir@latest`
+
+## Running From Source
 
 The program must access nftables, so you usually need to run it with sufficient privileges (e.g. via `sudo`).
 
@@ -42,7 +46,8 @@ Within the UI:
 - `a` — add a new redirect rule
 - `d` — delete the selected rule
 - `r` — refresh nftables rules
-- `p` — refresh Tailscale peer list
 - `q` — quit
+
+Use `ts-redir -version` to print the build metadata that GoReleaser injects into release artifacts.
 
 Rules are stored with metadata inside nftables `UserData`, so only rules created through `ts-redir` will appear in the list.
