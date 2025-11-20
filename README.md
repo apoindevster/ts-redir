@@ -41,6 +41,12 @@ The program must access nftables, so you usually need to run it with sufficient 
 sudo go run ./cmd/ts-redir/main.go
 ```
 
+To launch the modern web UI (which only binds to your Tailscale interface), pass `--web`:
+
+```bash
+sudo go run ./cmd/ts-redir/main.go --web --ts-interface tailscale0 --port 8080
+```
+
 Within the UI:
 
 - `a` — add a new redirect rule
