@@ -196,12 +196,32 @@ func (m *nftManager) ListRedirectRules() ([]RedirectRule, error) {
 	return out, nil
 }
 
+func (m *nftManager) RuleExists(rule RedirectRule) (bool, error) {
+	current, err := m.ListRedirectRules()
+	if err != nil {
+		return false, err
+	}
+	key := ruleKey(rule)
+	for _, r := range current {
+		if ruleKey(r) == key {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (m *nftManager) AddRedirectRule(rule RedirectRule) error {
 	if err := validateRule(rule); err != nil {
 		return err
 	}
 	if m.table == nil || m.preroutingChain == nil || m.postroutingChain == nil || m.outputChain == nil {
 		return errors.New("manager not initialised")
+	}
+
+	if exists, err := m.RuleExists(rule); err != nil {
+		return err
+	} else if exists {
+		return ErrDuplicateRule
 	}
 
 	protoNum, err := protoToNumber(rule.Protocol)
@@ -608,13 +628,6 @@ func uint16ToBytes(v uint16) []byte {
 	buf := make([]byte, 2)
 	binary.BigEndian.PutUint16(buf, v)
 	return buf
-}
-
-func ipToString(ip net.IP) string {
-	if ip == nil {
-		return ""
-	}
-	return ip.String()
 }
 
 func wrapNFTError(action string, err error) error {
