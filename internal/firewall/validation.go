@@ -7,8 +7,14 @@ import (
 )
 
 func validateRule(rule RedirectRule) error {
-	if err := ensureIPv4(rule.MatchIP, "match IP"); err != nil {
-		return err
+	if rule.MatchIP == nil {
+		if rule.MatchInterface == "" {
+			return errors.New("match IP must be provided when no ingress interface is specified")
+		}
+	} else {
+		if err := ensureIPv4(rule.MatchIP, "match IP"); err != nil {
+			return err
+		}
 	}
 	if err := ensureIPv4(rule.TargetIP, "target IP"); err != nil {
 		return err
@@ -21,6 +27,9 @@ func validateRule(rule RedirectRule) error {
 	}
 	if rule.Protocol != ProtocolTCP && rule.Protocol != ProtocolUDP {
 		return fmt.Errorf("unsupported protocol %q", rule.Protocol)
+	}
+	if len(rule.MatchInterface) > 15 {
+		return errors.New("match interface must be 15 characters or fewer")
 	}
 	return nil
 }

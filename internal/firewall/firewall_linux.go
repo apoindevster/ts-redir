@@ -32,14 +32,15 @@ const (
 var ErrPermissionDenied = errors.New("nftables requires CAP_NET_ADMIN (try running with sudo)")
 
 type ruleMetadata struct {
-	Description   string   `json:"description"`
-	Protocol      Protocol `json:"protocol"`
-	MatchIP       string   `json:"match_ip"`
-	MatchPort     uint16   `json:"match_port"`
-	TargetIP      string   `json:"target_ip"`
-	TargetPort    uint16   `json:"target_port"`
-	TailscalePeer string   `json:"tailscale_peer"`
-	Stage         string   `json:"stage,omitempty"`
+	Description    string   `json:"description"`
+	Protocol       Protocol `json:"protocol"`
+	MatchIP        string   `json:"match_ip"`
+	MatchInterface string   `json:"match_interface,omitempty"`
+	MatchPort      uint16   `json:"match_port"`
+	TargetIP       string   `json:"target_ip"`
+	TargetPort     uint16   `json:"target_port"`
+	TailscalePeer  string   `json:"tailscale_peer"`
+	Stage          string   `json:"stage,omitempty"`
 }
 
 type nftManager struct {
@@ -225,23 +226,23 @@ func (m *nftManager) AddRedirectRule(rule RedirectRule) error {
 		return fmt.Errorf("marshal output metadata: %w", err)
 	}
 
-	preroutingRule := &nftables.Rule{
-		Table:    m.table,
-		Chain:    m.preroutingChain,
-		UserData: redirectUserData,
-		Exprs: []expr.Any{
-			&expr.Payload{
-				OperationType: expr.PayloadLoad,
-				Base:          expr.PayloadBaseNetworkHeader,
-				Offset:        9,
-				Len:           1,
-				DestRegister:  1,
-			},
-			&expr.Cmp{
-				Register: 1,
-				Op:       expr.CmpOpEq,
-				Data:     []byte{protoNum},
-			},
+	preroutingExprs := append(
+		matchInterfaceExprs(rule.MatchInterface, expr.MetaKeyIIFNAME),
+		&expr.Payload{
+			OperationType: expr.PayloadLoad,
+			Base:          expr.PayloadBaseNetworkHeader,
+			Offset:        9,
+			Len:           1,
+			DestRegister:  1,
+		},
+		&expr.Cmp{
+			Register: 1,
+			Op:       expr.CmpOpEq,
+			Data:     []byte{protoNum},
+		},
+	)
+	if rule.MatchIP != nil {
+		preroutingExprs = append(preroutingExprs,
 			&expr.Payload{
 				OperationType: expr.PayloadLoad,
 				Base:          expr.PayloadBaseNetworkHeader,
@@ -254,35 +255,44 @@ func (m *nftManager) AddRedirectRule(rule RedirectRule) error {
 				Op:       expr.CmpOpEq,
 				Data:     rule.MatchIP.To4(),
 			},
-			&expr.Payload{
-				OperationType: expr.PayloadLoad,
-				Base:          expr.PayloadBaseTransportHeader,
-				Offset:        2,
-				Len:           2,
-				DestRegister:  1,
-			},
-			&expr.Cmp{
-				Register: 1,
-				Op:       expr.CmpOpEq,
-				Data:     uint16ToBytes(rule.MatchPort),
-			},
-			&expr.Immediate{
-				Register: 1,
-				Data:     rule.TargetIP.To4(),
-			},
-			&expr.Immediate{
-				Register: 2,
-				Data:     uint16ToBytes(rule.TargetPort),
-			},
-			&expr.NAT{
-				Type:        expr.NATTypeDestNAT,
-				Family:      uint32(unix.NFPROTO_IPV4),
-				RegAddrMin:  1,
-				RegAddrMax:  1,
-				RegProtoMin: 2,
-				RegProtoMax: 2,
-			},
+		)
+	}
+	preroutingExprs = append(preroutingExprs,
+		&expr.Payload{
+			OperationType: expr.PayloadLoad,
+			Base:          expr.PayloadBaseTransportHeader,
+			Offset:        2,
+			Len:           2,
+			DestRegister:  1,
 		},
+		&expr.Cmp{
+			Register: 1,
+			Op:       expr.CmpOpEq,
+			Data:     uint16ToBytes(rule.MatchPort),
+		},
+		&expr.Immediate{
+			Register: 1,
+			Data:     rule.TargetIP.To4(),
+		},
+		&expr.Immediate{
+			Register: 2,
+			Data:     uint16ToBytes(rule.TargetPort),
+		},
+		&expr.NAT{
+			Type:        expr.NATTypeDestNAT,
+			Family:      uint32(unix.NFPROTO_IPV4),
+			RegAddrMin:  1,
+			RegAddrMax:  1,
+			RegProtoMin: 2,
+			RegProtoMax: 2,
+		},
+	)
+
+	preroutingRule := &nftables.Rule{
+		Table:    m.table,
+		Chain:    m.preroutingChain,
+		UserData: redirectUserData,
+		Exprs:    preroutingExprs,
 	}
 
 	postroutingRule := &nftables.Rule{
@@ -330,11 +340,10 @@ func (m *nftManager) AddRedirectRule(rule RedirectRule) error {
 		},
 	}
 
-	outputRule := &nftables.Rule{
-		Table:    m.table,
-		Chain:    m.outputChain,
-		UserData: outputUserData,
-		Exprs: []expr.Any{
+	m.conn.AddRule(preroutingRule)
+	m.conn.AddRule(postroutingRule)
+	if rule.MatchIP != nil {
+		outputExprs := []expr.Any{
 			&expr.Payload{
 				OperationType: expr.PayloadLoad,
 				Base:          expr.PayloadBaseNetworkHeader,
@@ -387,12 +396,16 @@ func (m *nftManager) AddRedirectRule(rule RedirectRule) error {
 				RegProtoMin: 2,
 				RegProtoMax: 2,
 			},
-		},
-	}
+		}
 
-	m.conn.AddRule(preroutingRule)
-	m.conn.AddRule(postroutingRule)
-	m.conn.AddRule(outputRule)
+		outputRule := &nftables.Rule{
+			Table:    m.table,
+			Chain:    m.outputChain,
+			UserData: outputUserData,
+			Exprs:    outputExprs,
+		}
+		m.conn.AddRule(outputRule)
+	}
 	if err := m.conn.Flush(); err != nil {
 		return wrapNFTError("flush after rule add", err)
 	}
@@ -452,14 +465,19 @@ func trimUserDataPrefix(data []byte) []byte {
 }
 
 func buildMetadata(rule RedirectRule, stage string) ruleMetadata {
+	matchIP := ""
+	if rule.MatchIP != nil {
+		matchIP = rule.MatchIP.String()
+	}
 	meta := ruleMetadata{
-		Description:   rule.Description,
-		Protocol:      rule.Protocol,
-		MatchIP:       rule.MatchIP.String(),
-		MatchPort:     rule.MatchPort,
-		TargetIP:      rule.TargetIP.String(),
-		TargetPort:    rule.TargetPort,
-		TailscalePeer: rule.TailscalePeer,
+		Description:    rule.Description,
+		Protocol:       rule.Protocol,
+		MatchIP:        matchIP,
+		MatchInterface: rule.MatchInterface,
+		MatchPort:      rule.MatchPort,
+		TargetIP:       rule.TargetIP.String(),
+		TargetPort:     rule.TargetPort,
+		TailscalePeer:  rule.TailscalePeer,
 	}
 	if stage != "" {
 		meta.Stage = stage
@@ -476,20 +494,27 @@ func marshalMetadata(meta ruleMetadata) ([]byte, error) {
 }
 
 func redirectFromMetadata(handle uint64, meta ruleMetadata) (RedirectRule, error) {
-	matchIP := net.ParseIP(meta.MatchIP)
+	var matchIP net.IP
+	if meta.MatchIP != "" {
+		matchIP = net.ParseIP(meta.MatchIP)
+		if matchIP == nil {
+			return RedirectRule{}, errors.New("invalid match IP in metadata")
+		}
+	}
 	targetIP := net.ParseIP(meta.TargetIP)
-	if matchIP == nil || targetIP == nil {
-		return RedirectRule{}, errors.New("invalid IP in metadata")
+	if targetIP == nil {
+		return RedirectRule{}, errors.New("invalid target IP in metadata")
 	}
 	return RedirectRule{
-		Handle:        handle,
-		Description:   meta.Description,
-		Protocol:      meta.Protocol,
-		MatchIP:       matchIP,
-		MatchPort:     meta.MatchPort,
-		TargetIP:      targetIP,
-		TargetPort:    meta.TargetPort,
-		TailscalePeer: meta.TailscalePeer,
+		Handle:         handle,
+		Description:    meta.Description,
+		Protocol:       meta.Protocol,
+		MatchIP:        matchIP,
+		MatchInterface: meta.MatchInterface,
+		MatchPort:      meta.MatchPort,
+		TargetIP:       targetIP,
+		TargetPort:     meta.TargetPort,
+		TailscalePeer:  meta.TailscalePeer,
 	}, nil
 }
 
@@ -500,6 +525,9 @@ func metadataMatches(meta ruleMetadata, rule RedirectRule, expectedStage string)
 		}
 	}
 	if meta.MatchIP != ipToString(rule.MatchIP) {
+		return false
+	}
+	if meta.MatchInterface != rule.MatchInterface {
 		return false
 	}
 	if meta.TargetIP != ipToString(rule.TargetIP) {
@@ -540,6 +568,29 @@ func (m *nftManager) deleteRuleByStage(chain *nftables.Chain, expectedStage stri
 		return nil
 	}
 	return nil
+}
+
+func matchInterfaceExprs(iface string, key expr.MetaKey) []expr.Any {
+	if iface == "" {
+		return nil
+	}
+	return []expr.Any{
+		&expr.Meta{
+			Key:      key,
+			Register: 1,
+		},
+		&expr.Cmp{
+			Register: 1,
+			Op:       expr.CmpOpEq,
+			Data:     ifaceBytes(iface),
+		},
+	}
+}
+
+func ifaceBytes(name string) []byte {
+	buf := make([]byte, 16)
+	copy(buf, []byte(name))
+	return buf
 }
 
 func protoToNumber(proto Protocol) (byte, error) {

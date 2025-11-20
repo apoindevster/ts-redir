@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -279,8 +280,9 @@ func (m Model) View() string {
 		}
 	case modeConfirmDelete:
 		if m.pendingDelete != nil {
+			source := ipOrInterface(m.pendingDelete.MatchIP, m.pendingDelete.MatchInterface)
 			msg := fmt.Sprintf("Delete rule %s:%d → %s:%d ? (y/N)",
-				m.pendingDelete.MatchIP, m.pendingDelete.MatchPort,
+				source, m.pendingDelete.MatchPort,
 				m.pendingDelete.TargetIP, m.pendingDelete.TargetPort,
 			)
 			b.WriteString("\n\n")
@@ -387,8 +389,9 @@ type ruleItem struct {
 }
 
 func (i ruleItem) Title() string {
+	source := ipOrInterface(i.rule.MatchIP, i.rule.MatchInterface)
 	return fmt.Sprintf("%s:%d → %s:%d (%s)",
-		i.rule.MatchIP.String(),
+		source,
 		i.rule.MatchPort,
 		i.rule.TargetIP.String(),
 		i.rule.TargetPort,
@@ -408,12 +411,23 @@ func (i ruleItem) Description() string {
 }
 
 func (i ruleItem) FilterValue() string {
+	source := ipOrInterface(i.rule.MatchIP, i.rule.MatchInterface)
 	return fmt.Sprintf("%s %d %s %d %s %d",
-		i.rule.MatchIP.String(),
+		source,
 		i.rule.MatchPort,
 		i.rule.TargetIP.String(),
 		i.rule.TargetPort,
 		i.rule.Description,
 		i.rule.Handle,
 	)
+}
+
+func ipOrInterface(ip net.IP, iface string) string {
+	if ip != nil && ip.String() != "" {
+		return ip.String()
+	}
+	if iface != "" {
+		return iface
+	}
+	return "any"
 }

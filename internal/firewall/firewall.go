@@ -14,14 +14,15 @@ const (
 
 // RedirectRule describes a single redirect from a public IP/port to a tailnet peer.
 type RedirectRule struct {
-	Handle        uint64
-	Description   string
-	Protocol      Protocol
-	MatchIP       net.IP
-	MatchPort     uint16
-	TargetIP      net.IP
-	TargetPort    uint16
-	TailscalePeer string
+	Handle         uint64
+	Description    string
+	Protocol       Protocol
+	MatchIP        net.IP
+	MatchInterface string
+	MatchPort      uint16
+	TargetIP       net.IP
+	TargetPort     uint16
+	TailscalePeer  string
 }
 
 // Manager encapsulates platform-specific firewall control plane functionality.
