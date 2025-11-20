@@ -10,7 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/apoindevster/ts-redir/internal/nft"
+	"github.com/apoindevster/ts-redir/internal/firewall"
 	"github.com/apoindevster/ts-redir/internal/tailscale"
 )
 
@@ -32,17 +32,17 @@ var (
 
 // Model is the root Bubble Tea model for ts-redir.
 type Model struct {
-	manager *nft.Manager
+	manager firewall.Manager
 	list    list.Model
 
-	rules []nft.RedirectRule
+	rules []firewall.RedirectRule
 	peers []tailscale.Peer
 
 	statusMessage string
 
 	mode          mode
 	addForm       *addRuleModel
-	pendingDelete *nft.RedirectRule
+	pendingDelete *firewall.RedirectRule
 
 	width  int
 	height int
@@ -237,7 +237,7 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) currentRule() *nft.RedirectRule {
+func (m *Model) currentRule() *firewall.RedirectRule {
 	item, ok := m.list.SelectedItem().(ruleItem)
 	if !ok {
 		return nil
@@ -292,12 +292,12 @@ func (m Model) View() string {
 }
 
 type initResultMsg struct {
-	manager *nft.Manager
+	manager firewall.Manager
 	err     error
 }
 
 type rulesLoadedMsg struct {
-	rules []nft.RedirectRule
+	rules []firewall.RedirectRule
 }
 
 type peersLoadedMsg struct {
@@ -314,12 +314,12 @@ type opResultMsg struct {
 
 func initManagerCmd() tea.Cmd {
 	return func() tea.Msg {
-		manager, err := nft.NewManager()
+		manager, err := firewall.NewManager()
 		return initResultMsg{manager: manager, err: err}
 	}
 }
 
-func loadRulesCmd(manager *nft.Manager) tea.Cmd {
+func loadRulesCmd(manager firewall.Manager) tea.Cmd {
 	return func() tea.Msg {
 		if manager == nil {
 			return opResultMsg{err: fmt.Errorf("manager unavailable")}
@@ -350,7 +350,7 @@ func schedulePeerRefresh() tea.Cmd {
 	})
 }
 
-func addRuleCmd(manager *nft.Manager, rule nft.RedirectRule) tea.Cmd {
+func addRuleCmd(manager firewall.Manager, rule firewall.RedirectRule) tea.Cmd {
 	return func() tea.Msg {
 		if manager == nil {
 			return opResultMsg{err: fmt.Errorf("manager unavailable")}
@@ -362,7 +362,7 @@ func addRuleCmd(manager *nft.Manager, rule nft.RedirectRule) tea.Cmd {
 	}
 }
 
-func deleteRuleCmd(manager *nft.Manager, handle uint64) tea.Cmd {
+func deleteRuleCmd(manager firewall.Manager, handle uint64) tea.Cmd {
 	return func() tea.Msg {
 		if manager == nil {
 			return opResultMsg{err: fmt.Errorf("manager unavailable")}
@@ -374,7 +374,7 @@ func deleteRuleCmd(manager *nft.Manager, handle uint64) tea.Cmd {
 	}
 }
 
-func rulesToItems(rules []nft.RedirectRule) []list.Item {
+func rulesToItems(rules []firewall.RedirectRule) []list.Item {
 	items := make([]list.Item, 0, len(rules))
 	for _, r := range rules {
 		items = append(items, ruleItem{rule: r})
@@ -383,7 +383,7 @@ func rulesToItems(rules []nft.RedirectRule) []list.Item {
 }
 
 type ruleItem struct {
-	rule nft.RedirectRule
+	rule firewall.RedirectRule
 }
 
 func (i ruleItem) Title() string {
@@ -404,7 +404,6 @@ func (i ruleItem) Description() string {
 	if i.rule.TailscalePeer != "" {
 		parts = append(parts, fmt.Sprintf("peer: %s", i.rule.TailscalePeer))
 	}
-	parts = append(parts, fmt.Sprintf("handle: %d", i.rule.Handle))
 	return strings.Join(parts, " • ")
 }
 
