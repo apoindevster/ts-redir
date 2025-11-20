@@ -1,4 +1,6 @@
-package nft
+//go:build linux
+
+package firewall
 
 import (
 	"bytes"
@@ -29,28 +31,6 @@ const (
 // ErrPermissionDenied indicates the caller lacks CAP_NET_ADMIN privileges.
 var ErrPermissionDenied = errors.New("nftables requires CAP_NET_ADMIN (try running with sudo)")
 
-// Protocol represents the L4 protocol supported by redirect rules.
-type Protocol string
-
-const (
-	// ProtocolTCP matches TCP traffic.
-	ProtocolTCP Protocol = "tcp"
-	// ProtocolUDP matches UDP traffic.
-	ProtocolUDP Protocol = "udp"
-)
-
-// RedirectRule is a simplified view of the nftables redirect rule we manage.
-type RedirectRule struct {
-	Handle        uint64   `json:"handle"`
-	Description   string   `json:"description"`
-	Protocol      Protocol `json:"protocol"`
-	MatchIP       net.IP   `json:"match_ip"`
-	MatchPort     uint16   `json:"match_port"`
-	TargetIP      net.IP   `json:"target_ip"`
-	TargetPort    uint16   `json:"target_port"`
-	TailscalePeer string   `json:"tailscale_peer"`
-}
-
 type ruleMetadata struct {
 	Description   string   `json:"description"`
 	Protocol      Protocol `json:"protocol"`
@@ -62,8 +42,7 @@ type ruleMetadata struct {
 	Stage         string   `json:"stage,omitempty"`
 }
 
-// Manager manages nftables state for ts-redir.
-type Manager struct {
+type nftManager struct {
 	conn             *nftables.Conn
 	table            *nftables.Table
 	preroutingChain  *nftables.Chain
@@ -71,22 +50,18 @@ type Manager struct {
 	outputChain      *nftables.Chain
 }
 
-// NewManager creates a manager bound to the nftables connection and ensures
-// that the ts-redir table/chain exist.
-func NewManager() (*Manager, error) {
+func newManager() (Manager, error) {
 	conn := &nftables.Conn{}
-	m := &Manager{conn: conn}
+	m := &nftManager{conn: conn}
 	if err := m.ensureBaseObjects(); err != nil {
 		return nil, err
 	}
 	return m, nil
 }
 
-// Close closes the underlying netlink connection.
-func (m *Manager) Close() error { return nil }
+func (m *nftManager) Close() error { return nil }
 
-// ensureBaseObjects ensures that the ts-redir table and chain are present.
-func (m *Manager) ensureBaseObjects() error {
+func (m *nftManager) ensureBaseObjects() error {
 	if err := m.ensureTable(); err != nil {
 		return err
 	}
@@ -96,7 +71,7 @@ func (m *Manager) ensureBaseObjects() error {
 	return nil
 }
 
-func (m *Manager) ensureTable() error {
+func (m *nftManager) ensureTable() error {
 	tables, err := m.conn.ListTables()
 	if err != nil {
 		return wrapNFTError("list tables", err)
@@ -119,7 +94,7 @@ func (m *Manager) ensureTable() error {
 	return nil
 }
 
-func (m *Manager) ensureChains() error {
+func (m *nftManager) ensureChains() error {
 	chains, err := m.conn.ListChains()
 	if err != nil {
 		return wrapNFTError("list chains", err)
@@ -172,7 +147,6 @@ func (m *Manager) ensureChains() error {
 		if err := m.conn.Flush(); err != nil {
 			return wrapNFTError("flush after chain add", err)
 		}
-		// Refresh chain pointers
 		chains, err = m.conn.ListChains()
 		if err != nil {
 			return wrapNFTError("list chains", err)
@@ -188,8 +162,7 @@ func (m *Manager) ensureChains() error {
 	return nil
 }
 
-// ListRedirectRules enumerates redirect rules managed by ts-redir.
-func (m *Manager) ListRedirectRules() ([]RedirectRule, error) {
+func (m *nftManager) ListRedirectRules() ([]RedirectRule, error) {
 	if m.table == nil || m.preroutingChain == nil {
 		return nil, errors.New("manager not initialised")
 	}
@@ -222,8 +195,7 @@ func (m *Manager) ListRedirectRules() ([]RedirectRule, error) {
 	return out, nil
 }
 
-// AddRedirectRule adds a new redirect rule.
-func (m *Manager) AddRedirectRule(rule RedirectRule) error {
+func (m *nftManager) AddRedirectRule(rule RedirectRule) error {
 	if err := validateRule(rule); err != nil {
 		return err
 	}
@@ -258,7 +230,6 @@ func (m *Manager) AddRedirectRule(rule RedirectRule) error {
 		Chain:    m.preroutingChain,
 		UserData: redirectUserData,
 		Exprs: []expr.Any{
-			// Match protocol.
 			&expr.Payload{
 				OperationType: expr.PayloadLoad,
 				Base:          expr.PayloadBaseNetworkHeader,
@@ -271,7 +242,6 @@ func (m *Manager) AddRedirectRule(rule RedirectRule) error {
 				Op:       expr.CmpOpEq,
 				Data:     []byte{protoNum},
 			},
-			// Match original destination IP.
 			&expr.Payload{
 				OperationType: expr.PayloadLoad,
 				Base:          expr.PayloadBaseNetworkHeader,
@@ -284,7 +254,6 @@ func (m *Manager) AddRedirectRule(rule RedirectRule) error {
 				Op:       expr.CmpOpEq,
 				Data:     rule.MatchIP.To4(),
 			},
-			// Match original destination port.
 			&expr.Payload{
 				OperationType: expr.PayloadLoad,
 				Base:          expr.PayloadBaseTransportHeader,
@@ -297,17 +266,14 @@ func (m *Manager) AddRedirectRule(rule RedirectRule) error {
 				Op:       expr.CmpOpEq,
 				Data:     uint16ToBytes(rule.MatchPort),
 			},
-			// Load target address into register 1.
 			&expr.Immediate{
 				Register: 1,
 				Data:     rule.TargetIP.To4(),
 			},
-			// Load target port into register 2.
 			&expr.Immediate{
 				Register: 2,
 				Data:     uint16ToBytes(rule.TargetPort),
 			},
-			// Apply DNAT.
 			&expr.NAT{
 				Type:        expr.NATTypeDestNAT,
 				Family:      uint32(unix.NFPROTO_IPV4),
@@ -433,8 +399,7 @@ func (m *Manager) AddRedirectRule(rule RedirectRule) error {
 	return nil
 }
 
-// DeleteRedirectRule removes a rule by handle.
-func (m *Manager) DeleteRedirectRule(handle uint64) error {
+func (m *nftManager) DeleteRedirectRule(handle uint64) error {
 	if m.table == nil || m.preroutingChain == nil || m.postroutingChain == nil || m.outputChain == nil {
 		return errors.New("manager not initialised")
 	}
@@ -549,7 +514,7 @@ func metadataMatches(meta ruleMetadata, rule RedirectRule, expectedStage string)
 	return true
 }
 
-func (m *Manager) deleteRuleByStage(chain *nftables.Chain, expectedStage string, rule RedirectRule) error {
+func (m *nftManager) deleteRuleByStage(chain *nftables.Chain, expectedStage string, rule RedirectRule) error {
 	if chain == nil {
 		return nil
 	}
@@ -573,25 +538,6 @@ func (m *Manager) deleteRuleByStage(chain *nftables.Chain, expectedStage string,
 			return wrapNFTError(fmt.Sprintf("delete %s rule", expectedStage), err)
 		}
 		return nil
-	}
-	return nil
-}
-
-func validateRule(rule RedirectRule) error {
-	if rule.MatchIP == nil || rule.MatchIP.To4() == nil {
-		return errors.New("match IP must be a valid IPv4 address")
-	}
-	if rule.TargetIP == nil || rule.TargetIP.To4() == nil {
-		return errors.New("target IP must be a valid IPv4 address")
-	}
-	if rule.MatchPort == 0 {
-		return errors.New("match port must be non-zero")
-	}
-	if rule.TargetPort == 0 {
-		return errors.New("target port must be non-zero")
-	}
-	if rule.Protocol != ProtocolTCP && rule.Protocol != ProtocolUDP {
-		return fmt.Errorf("unsupported protocol %q", rule.Protocol)
 	}
 	return nil
 }

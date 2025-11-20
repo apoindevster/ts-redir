@@ -10,7 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/apoindevster/ts-redir/internal/nft"
+	"github.com/apoindevster/ts-redir/internal/firewall"
 	"github.com/apoindevster/ts-redir/internal/tailscale"
 )
 
@@ -41,7 +41,7 @@ type addRuleModel struct {
 	errMsg string
 }
 
-var protocolOptions = []nft.Protocol{nft.ProtocolTCP, nft.ProtocolUDP}
+var protocolOptions = []firewall.Protocol{firewall.ProtocolTCP, firewall.ProtocolUDP}
 
 func newAddRuleModel(peers []tailscale.Peer) addRuleModel {
 	matchIP := textinput.New()
@@ -233,9 +233,9 @@ func (a *addRuleModel) Completed() bool {
 	return a.completed
 }
 
-func (a *addRuleModel) Result() nft.RedirectRule {
+func (a *addRuleModel) Result() firewall.RedirectRule {
 	description := fmt.Sprintf("→ %s", a.peerName)
-	return nft.RedirectRule{
+	return firewall.RedirectRule{
 		Description:   description,
 		Protocol:      protocolOptions[a.protocolIndex],
 		MatchIP:       a.matchIP,
