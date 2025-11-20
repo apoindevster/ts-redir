@@ -15,7 +15,7 @@ I have found myself from time to time wanting to use my tailnet not for the subn
 ## Features
 
 - Discover Tailscale peers via the local `tailscale status --json` command.
-- Create IPv4 DNAT rules that match a destination IP/port and forward them to a peer/port, with automatic postrouting masquerade so return traffic reaches the client.
+- Create IPv4 DNAT rules that match a destination IP/port (optionally scoped to a specific ingress interface) and forward them to a peer/port, with automatic postrouting masquerade so return traffic reaches the client.
 - List and remove existing rules that were created through the application.
 - Automatically ensures the `ip ts_redir` table and `prerouting`, `postrouting`, and `output` chains exist.
 

@@ -17,6 +17,7 @@ import (
 type addRuleModel struct {
 	step int
 
+	matchIfaceInput textinput.Model
 	matchIPInput    textinput.Model
 	matchPortInput  textinput.Model
 	targetPortInput textinput.Model
@@ -28,6 +29,7 @@ type addRuleModel struct {
 	peerIP   net.IP
 	peerName string
 
+	matchIface string
 	matchIP    net.IP
 	matchPort  uint16
 	targetPort uint16
@@ -62,6 +64,12 @@ func newAddRuleModel(peers []tailscale.Peer) addRuleModel {
 	targetPort.CharLimit = 5
 	targetPort.Width = len(targetPort.Placeholder)
 
+	matchIface := textinput.New()
+	matchIface.Placeholder = "Ingress interface (optional, e.g. eno1)"
+	matchIface.Prompt = "> "
+	matchIface.CharLimit = 16
+	matchIface.Width = len(matchIface.Placeholder)
+
 	delegate := list.NewDefaultDelegate()
 	delegate.ShowDescription = false
 	l := list.New(peerItems(peers), delegate, 50, 7)
@@ -71,6 +79,7 @@ func newAddRuleModel(peers []tailscale.Peer) addRuleModel {
 	l.SetFilteringEnabled(false)
 
 	return addRuleModel{
+		matchIfaceInput: matchIface,
 		matchIPInput:    matchIP,
 		matchPortInput:  matchPort,
 		targetPortInput: targetPort,
@@ -101,7 +110,7 @@ func (a *addRuleModel) SetSize(width, height int) {
 }
 
 func (a *addRuleModel) Init() tea.Cmd {
-	return a.matchIPInput.Focus()
+	return a.matchIfaceInput.Focus()
 }
 
 func (a *addRuleModel) Update(msg tea.Msg) tea.Cmd {
@@ -116,14 +125,16 @@ func (a *addRuleModel) Update(msg tea.Msg) tea.Cmd {
 
 	switch a.step {
 	case 0:
-		return a.updateMatchIP(msg)
+		return a.updateInterface(msg)
 	case 1:
-		return a.updateMatchPort(msg)
+		return a.updateMatchIP(msg)
 	case 2:
-		return a.updateProtocol(msg)
+		return a.updateMatchPort(msg)
 	case 3:
-		return a.updatePeerSelection(msg)
+		return a.updateProtocol(msg)
 	case 4:
+		return a.updatePeerSelection(msg)
+	case 5:
 		return a.updateTargetPort(msg)
 	default:
 		return nil
@@ -135,15 +146,43 @@ func (a *addRuleModel) updateMatchIP(msg tea.Msg) tea.Cmd {
 	a.matchIPInput, cmd = a.matchIPInput.Update(msg)
 
 	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyEnter {
-		ip := net.ParseIP(strings.TrimSpace(a.matchIPInput.Value()))
-		if ip == nil || ip.To4() == nil {
-			a.errMsg = "enter a valid IPv4 address"
-			return cmd
+		value := strings.TrimSpace(a.matchIPInput.Value())
+		if value == "" {
+			if a.matchIface == "" {
+				a.errMsg = "enter an IPv4 address or specify an ingress interface"
+				return cmd
+			}
+			a.matchIP = nil
+		} else {
+			ip := net.ParseIP(value)
+			if ip == nil || ip.To4() == nil {
+				a.errMsg = "enter a valid IPv4 address"
+				return cmd
+			}
+			a.matchIP = ip.To4()
 		}
-		a.matchIP = ip.To4()
-		a.step = 1
+		a.step = 2
 		a.errMsg = ""
 		return a.matchPortInput.Focus()
+	}
+
+	return cmd
+}
+
+func (a *addRuleModel) updateInterface(msg tea.Msg) tea.Cmd {
+	var cmd tea.Cmd
+	a.matchIfaceInput, cmd = a.matchIfaceInput.Update(msg)
+
+	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyEnter {
+		iface := strings.TrimSpace(a.matchIfaceInput.Value())
+		if len(iface) > 15 {
+			a.errMsg = "interface must be 15 characters or fewer"
+			return cmd
+		}
+		a.matchIface = iface
+		a.step = 1
+		a.errMsg = ""
+		return a.matchIPInput.Focus()
 	}
 
 	return cmd
@@ -160,7 +199,7 @@ func (a *addRuleModel) updateMatchPort(msg tea.Msg) tea.Cmd {
 			return cmd
 		}
 		a.matchPort = port
-		a.step = 2
+		a.step = 3
 		a.errMsg = ""
 		return nil
 	}
@@ -176,7 +215,7 @@ func (a *addRuleModel) updateProtocol(msg tea.Msg) tea.Cmd {
 		case "right", "down", "tab":
 			a.protocolIndex = (a.protocolIndex + 1) % len(protocolOptions)
 		case "enter":
-			a.step = 3
+			a.step = 4
 			a.errMsg = ""
 			return a.resetPeerList()
 		}
@@ -203,7 +242,7 @@ func (a *addRuleModel) updatePeerSelection(msg tea.Msg) tea.Cmd {
 		}
 		a.peerIP = item.ip
 		a.peerName = item.name
-		a.step = 4
+		a.step = 5
 		a.errMsg = ""
 		return tea.Batch(cmd, a.targetPortInput.Focus())
 	}
@@ -236,13 +275,14 @@ func (a *addRuleModel) Completed() bool {
 func (a *addRuleModel) Result() firewall.RedirectRule {
 	description := fmt.Sprintf("→ %s", a.peerName)
 	return firewall.RedirectRule{
-		Description:   description,
-		Protocol:      protocolOptions[a.protocolIndex],
-		MatchIP:       a.matchIP,
-		MatchPort:     a.matchPort,
-		TargetIP:      a.peerIP,
-		TargetPort:    a.targetPort,
-		TailscalePeer: a.peerName,
+		Description:    description,
+		Protocol:       protocolOptions[a.protocolIndex],
+		MatchIP:        a.matchIP,
+		MatchInterface: a.matchIface,
+		MatchPort:      a.matchPort,
+		TargetIP:       a.peerIP,
+		TargetPort:     a.targetPort,
+		TailscalePeer:  a.peerName,
 	}
 }
 
@@ -263,12 +303,15 @@ func (a addRuleModel) View() string {
 
 	switch a.step {
 	case 0:
-		b.WriteString("Match destination IPv4 address:\n")
-		b.WriteString(a.matchIPInput.View())
+		b.WriteString("Ingress interface (optional, leave blank for any):\n")
+		b.WriteString(a.matchIfaceInput.View())
 	case 1:
+		b.WriteString("Match destination IPv4 address (optional when interface is set):\n")
+		b.WriteString(a.matchIPInput.View())
+	case 2:
 		b.WriteString("Match destination port:\n")
 		b.WriteString(a.matchPortInput.View())
-	case 2:
+	case 3:
 		b.WriteString("Select protocol (Tab/Arrow keys to toggle):\n")
 		for i, p := range protocolOptions {
 			choice := strings.ToUpper(string(p))
@@ -280,10 +323,10 @@ func (a addRuleModel) View() string {
 				b.WriteString("  ")
 			}
 		}
-	case 3:
+	case 4:
 		b.WriteString("Select destination Tailscale peer:\n")
 		b.WriteString(a.peerList.View())
-	case 4:
+	case 5:
 		b.WriteString("Destination port on selected peer:\n")
 		b.WriteString(a.targetPortInput.View())
 	}
