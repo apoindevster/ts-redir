@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"runtime"
 )
 
 func validateRule(rule RedirectRule) error {
@@ -28,7 +29,7 @@ func validateRule(rule RedirectRule) error {
 	if rule.Protocol != ProtocolTCP && rule.Protocol != ProtocolUDP {
 		return fmt.Errorf("unsupported protocol %q", rule.Protocol)
 	}
-	if len(rule.MatchInterface) > 15 {
+	if runtime.GOOS != "windows" && len(rule.MatchInterface) > 15 {
 		return errors.New("match interface must be 15 characters or fewer")
 	}
 	return nil
