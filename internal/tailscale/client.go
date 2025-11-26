@@ -12,16 +12,21 @@ import (
 
 // Peer represents a single Tailscale node.
 type Peer struct {
-	ID     string
-	Name   string
-	IPs    []net.IP
-	Online bool
-	Self   bool
+	ID         string
+	Name       string
+	HostName   string
+	IPs        []net.IP
+	Online     bool
+	DNSName    string
+	OS         string
+	IsExitNode bool
+	Self       bool
 }
 
 type statusResponse struct {
-	Self selfStatus            `json:"Self"`
-	Peer map[string]peerStatus `json:"Peer"`
+	DNSSuffix string                `json:"MagicDNSSuffix"`
+	Self      selfStatus            `json:"Self"`
+	Peer      map[string]peerStatus `json:"Peer"`
 }
 
 type selfStatus struct {
@@ -29,6 +34,9 @@ type selfStatus struct {
 	HostName     string   `json:"HostName"`
 	TailscaleIPs []string `json:"TailscaleIPs"`
 	Online       bool     `json:"Online"`
+	DNSName      string   `json:"DNSName"`
+	OS           string   `json:"OS"`
+	IsExitNode   bool     `json:"ExitNodeOption"`
 }
 
 type peerStatus struct {
@@ -36,20 +44,26 @@ type peerStatus struct {
 	HostName     string   `json:"HostName"`
 	TailscaleIPs []string `json:"TailscaleIPs"`
 	Online       bool     `json:"Online"`
+	DNSName      string   `json:"DNSName"`
+	OS           string   `json:"OS"`
+	IsExitNode   bool     `json:"ExitNodeOption"`
 }
+
+var dnsSuffix string
 
 // ListPeers returns the current set of peers reported by the local Tailscale daemon.
 func ListPeers(ctx context.Context) ([]Peer, error) {
-	cmd := exec.CommandContext(ctx, "tailscale", "status", "--json")
-	output, err := cmd.Output()
+	output, err := fetchStatus(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("tailscale status: %w", err)
+		return nil, err
 	}
 
 	var status statusResponse
 	if err := json.Unmarshal(output, &status); err != nil {
 		return nil, fmt.Errorf("parse tailscale status: %w", err)
 	}
+
+	dnsSuffix = status.DNSSuffix
 
 	var peers []Peer
 	if status.Self.ID != "" {
@@ -70,26 +84,65 @@ func ListPeers(ctx context.Context) ([]Peer, error) {
 	return peers, nil
 }
 
+// RawStatus returns the full JSON payload from `tailscale status --json` so callers can
+// expose more peer/self details without needing to mirror all fields here.
+func RawStatus(ctx context.Context) (json.RawMessage, error) {
+	output, err := fetchStatus(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var raw json.RawMessage
+	if err := json.Unmarshal(output, &raw); err != nil {
+		return nil, fmt.Errorf("parse tailscale status: %w", err)
+	}
+	return raw, nil
+}
+
+func fetchStatus(ctx context.Context) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "tailscale", "status", "--json")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("tailscale status: %w", err)
+	}
+	return output, nil
+}
+
 func peerFromSelf(s selfStatus) Peer {
+	name := strings.TrimSuffix(s.DNSName, ".")
+	name = strings.TrimSuffix(name, dnsSuffix)
+	name = strings.TrimSuffix(name, ".")
 	return Peer{
-		ID:     s.ID,
-		Name:   s.HostName + " (self)",
-		IPs:    parseIPs(s.TailscaleIPs),
-		Online: s.Online,
-		Self:   true,
+		ID:         s.ID,
+		Name:       name,
+		HostName:   s.HostName,
+		IPs:        parseIPs(s.TailscaleIPs),
+		Online:     s.Online,
+		DNSName:    s.DNSName,
+		OS:         s.OS,
+		IsExitNode: s.IsExitNode,
+		Self:       true,
 	}
 }
 
 func peerFromStatus(id string, s peerStatus) Peer {
-	name := s.HostName
-	if name == "" {
-		name = id
+	hostname := s.HostName
+	if hostname == "" {
+		hostname = id
 	}
+
+	name := strings.TrimSuffix(s.DNSName, ".")
+	name = strings.TrimSuffix(name, dnsSuffix)
+	name = strings.TrimSuffix(name, ".")
+
 	return Peer{
-		ID:     firstNonEmpty(s.ID, id),
-		Name:   name,
-		IPs:    parseIPs(s.TailscaleIPs),
-		Online: s.Online,
+		ID:         firstNonEmpty(s.ID, id),
+		Name:       name,
+		HostName:   hostname,
+		IPs:        parseIPs(s.TailscaleIPs),
+		Online:     s.Online,
+		DNSName:    s.DNSName,
+		OS:         s.OS,
+		IsExitNode: s.IsExitNode,
 	}
 }
 

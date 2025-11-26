@@ -61,6 +61,7 @@ func (s *Server) Run() error {
 	mux.HandleFunc("/api/rules/", s.handleRuleByID)
 	mux.HandleFunc("/api/peers", s.handlePeers)
 	mux.HandleFunc("/api/interfaces", s.handleInterfaces)
+	mux.HandleFunc("/api/status", s.handleStatus)
 
 	s.server = &http.Server{
 		Addr:    addr,
@@ -210,6 +211,25 @@ func (s *Server) handleInterfaces(w http.ResponseWriter, r *http.Request) {
 	}
 	names := availableInterfaces(s.ifaceName)
 	writeJSON(w, names)
+}
+
+func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+	raw, err := tailscale.RawStatus(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if _, err := w.Write(raw); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 type rulePayload struct {
