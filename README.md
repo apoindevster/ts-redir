@@ -36,7 +36,7 @@ I have found myself from time to time wanting to use my tailnet not for the subn
 ## Requirements
 
 - Linux host with nftables support and privileges to add NAT rules (typically root).
-- Windows host with Administrator privileges and the built-in `netsh interface portproxy` available for TCP/UDP redirection.
+- Windows host with Administrator privileges and the built-in `netsh interface portproxy` available for TCP redirection. portproxy does not support UDP and therefore, it will not work.
 - Tailscale CLI installed and authenticated (for peer discovery).
 - ip_forwarding enabled on the Linux host.
     - `sudo sysctl net.ipv4.ip_forward=1`
