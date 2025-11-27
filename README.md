@@ -36,12 +36,15 @@ I have found myself from time to time wanting to use my tailnet not for the subn
 ## Requirements
 
 - Linux host with nftables support and privileges to add NAT rules (typically root).
+- Windows host with Administrator privileges and the built-in `netsh interface portproxy` available for TCP redirection. portproxy does not support UDP and therefore, it will not work.
 - Tailscale CLI installed and authenticated (for peer discovery).
 - ip_forwarding enabled on the Linux host.
     - `sudo sysctl net.ipv4.ip_forward=1`
     - For persistent ip forwarding:
         - `echo "net.ipv4.ip_forward=1" | sudo tee -a /etc/sysctl.conf`
 - Go 1.24 or newer if building from source.
+
+On Windows, rule descriptions and peer labels are not persisted by `netsh portproxy`, so they will appear empty after reloading rules.
 
 ## Installation
 
