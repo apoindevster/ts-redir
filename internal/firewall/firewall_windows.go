@@ -9,6 +9,7 @@ import (
 	"hash/fnv"
 	"net"
 	"os/exec"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -23,7 +24,7 @@ func newManager() (Manager, error) { return &netshManager{}, nil }
 func (m *netshManager) Close() error { return nil }
 
 func (m *netshManager) ListRedirectRules() ([]RedirectRule, error) {
-	output, err := exec.Command("netsh", "interface", "portproxy", "dump").CombinedOutput()
+	output, err := exec.Command("netsh", "interface", "portproxy", "show", "all").CombinedOutput()
 	if err != nil {
 		return nil, wrapNetshError("list rules", err, output)
 	}
@@ -126,19 +127,36 @@ func (m *netshManager) normalizeRule(rule RedirectRule) (RedirectRule, error) {
 func parsePortProxyDump(output string) []RedirectRule {
 	scanner := bufio.NewScanner(strings.NewReader(output))
 	var rules []RedirectRule
+	re := regexp.MustCompile(`^\s*(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s*$`)
+	headerSkipped := false
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if !strings.HasPrefix(strings.ToLower(line), "add ") {
+
+		if strings.HasPrefix(line, "---") {
+			headerSkipped = true
 			continue
 		}
+
+		// Only continue if we are passed the header
+		if !headerSkipped {
+			continue
+		}
+
+		// If we don't find a match, continue
+		if match := re.FindStringSubmatch(line); match == nil {
+			fmt.Println("Failed to match the output needed")
+			continue
+		}
+
 		fields := strings.Fields(line)
-		if len(fields) < 2 || strings.ToLower(fields[1]) != "v4tov4" {
+		if len(fields) < 4 {
+			fmt.Println("Not enough fields")
 			continue
 		}
-		params := parseKeyValueFields(fields[2:])
+		params := parseRedirectRuleFromOutput(fields)
 		rule, ok := ruleFromParams(params)
 		if !ok {
 			continue
@@ -148,28 +166,43 @@ func parsePortProxyDump(output string) []RedirectRule {
 	return rules
 }
 
-func parseKeyValueFields(fields []string) map[string]string {
+func parseRedirectRuleFromOutput(fields []string) map[string]string {
 	values := make(map[string]string)
-	for _, f := range fields {
-		parts := strings.SplitN(f, "=", 2)
-		if len(parts) != 2 {
-			continue
+	for i, f := range fields {
+		switch i {
+		case 0:
+			values["listenaddress"] = strings.TrimSpace(f)
+			break
+		case 1:
+			values["listenport"] = strings.TrimSpace(f)
+			break
+		case 2:
+			values["connectaddress"] = strings.TrimSpace(f)
+			break
+		case 3:
+			values["connectport"] = strings.TrimSpace(f)
+			break
 		}
-		key := strings.ToLower(strings.TrimSpace(parts[0]))
-		values[key] = strings.TrimSpace(parts[1])
 	}
 	return values
 }
 
 func ruleFromParams(params map[string]string) (RedirectRule, bool) {
+	var listenIP net.IP = nil
 	listenAddr := params["listenaddress"]
+
+	if listenAddr != "" {
+		listenIP = net.ParseIP(listenAddr)
+	}
+
 	connectAddr := params["connectaddress"]
-	if listenAddr == "" || connectAddr == "" {
+	if connectAddr == "" {
 		return RedirectRule{}, false
 	}
-	listenIP := net.ParseIP(listenAddr)
+
 	targetIP := net.ParseIP(connectAddr)
-	if listenIP == nil || targetIP == nil {
+
+	if targetIP == nil {
 		return RedirectRule{}, false
 	}
 
@@ -185,9 +218,9 @@ func ruleFromParams(params map[string]string) (RedirectRule, bool) {
 	proto := protocolFromString(params["protocol"])
 	rule := RedirectRule{
 		Protocol:   proto,
-		MatchIP:    listenIP.To4(),
+		MatchIP:    listenIP,
 		MatchPort:  uint16(listenPort),
-		TargetIP:   targetIP.To4(),
+		TargetIP:   targetIP,
 		TargetPort: uint16(targetPort),
 	}
 	rule.Handle = computeHandle(rule)
@@ -204,9 +237,23 @@ func protocolFromString(value string) Protocol {
 }
 
 func computeHandle(rule RedirectRule) uint64 {
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(ruleKey(rule)))
-	return h.Sum64()
+	// Reduced precision because browser side loses some precision in the number.
+	// Should have no collisions at 32 bits for this project
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(windowsRuleKey(rule)))
+	out := h.Sum32()
+	return uint64(out)
+}
+
+func windowsRuleKey(rule RedirectRule) string {
+	ip := ipToString(rule.MatchIP)
+	target := ipToString(rule.TargetIP)
+	return strings.Join([]string{
+		ip,
+		fmt.Sprintf("%d", rule.MatchPort),
+		target,
+		fmt.Sprintf("%d", rule.TargetPort),
+	}, "|")
 }
 
 func interfaceIPv4(name string) (net.IP, error) {
