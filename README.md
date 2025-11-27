@@ -2,7 +2,7 @@
 
 # ts-redir
 
-`ts-redir` is a terminal user interface for managing firewall redirect rules that forward traffic into a Tailscale tailnet. It combines the [`github.com/google/nftables`](https://pkg.go.dev/github.com/google/nftables) library with the Bubble Tea framework to provide an interactive workflow for creating and deleting DNAT rules that point traffic at Tailscale peers. More firewalls such as pfctl on macOS coming soon
+`ts-redir` is a terminal user interface for managing firewall redirect rules that forward traffic into a Tailscale tailnet. It combines various firewall libraries with the Bubble Tea framework or web-ui to provide an interactive workflow for creating and deleting DNAT rules that point traffic at Tailscale peers. Current support includes `nftables` on Linux and `netsh interface portproxy` on Windows. More firewalls such as pfctl on macOS coming soon. Feel free to create an issue if you want particular firewall support.
 
 ## Disclaimer
 
