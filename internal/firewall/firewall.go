@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"runtime"
 	"strings"
 )
 
@@ -15,7 +16,48 @@ const (
 	ProtocolTCP Protocol = "tcp"
 	// ProtocolUDP matches UDP traffic.
 	ProtocolUDP Protocol = "udp"
+	// ProtocolBoth creates separate TCP and UDP redirect rules.
+	ProtocolBoth Protocol = "both"
 )
+
+// Label returns the protocol name used in the interfaces.
+func (p Protocol) Label() string {
+	if p == ProtocolBoth {
+		return "Both (TCP + UDP)"
+	}
+	return strings.ToUpper(string(p))
+}
+
+// SupportedProtocols returns the protocol choices supported by this host.
+func SupportedProtocols() []Protocol {
+	if runtime.GOOS == "windows" {
+		return []Protocol{ProtocolTCP}
+	}
+	return []Protocol{ProtocolTCP, ProtocolUDP, ProtocolBoth}
+}
+
+// ValidateProtocol rejects unsupported choices before any firewall operations.
+func ValidateProtocol(protocol Protocol) error {
+	if runtime.GOOS == "windows" && protocol != ProtocolTCP {
+		return errors.New("Windows portproxy only supports TCP; UDP and TCP + UDP are not supported")
+	}
+	switch protocol {
+	case ProtocolTCP, ProtocolUDP, ProtocolBoth:
+		return nil
+	default:
+		return fmt.Errorf("unsupported protocol %q", protocol)
+	}
+}
+
+func expandRule(rule RedirectRule) []RedirectRule {
+	if rule.Protocol != ProtocolBoth {
+		return []RedirectRule{rule}
+	}
+	tcp, udp := rule, rule
+	tcp.Protocol = ProtocolTCP
+	udp.Protocol = ProtocolUDP
+	return []RedirectRule{tcp, udp}
+}
 
 // RedirectRule describes a single redirect from a public IP/port to a tailnet peer.
 type RedirectRule struct {
@@ -33,6 +75,7 @@ type RedirectRule struct {
 // Manager encapsulates platform-specific firewall control plane functionality.
 type Manager interface {
 	ListRedirectRules() ([]RedirectRule, error)
+	// RuleExists reports whether any requested protocol already has a matching rule.
 	RuleExists(RedirectRule) (bool, error)
 	AddRedirectRule(RedirectRule) error
 	DeleteRedirectRule(handle uint64) error

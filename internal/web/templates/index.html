@@ -173,10 +173,12 @@
               </label>
               <label class="form-item-proto">
                 Protocol
-                <select name="protocol" required>
-                  <option value="tcp">TCP</option>
-                  <option value="udp">UDP</option>
+                <select name="protocol" aria-describedby="protocol-help" required>
+                  {{range .Protocols}}
+                  <option value="{{.}}">{{.Label}}</option>
+                  {{end}}
                 </select>
+                <small id="protocol-help">{{if eq (len .Protocols) 1}}Windows supports TCP only.{{else}}Both creates separate TCP and UDP redirects.{{end}}</small>
               </label>
               <label class="form-item-iface">
                 Ingress interface (optional)

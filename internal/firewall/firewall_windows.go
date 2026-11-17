@@ -100,6 +100,10 @@ func (m *netshManager) DeleteRedirectRule(handle uint64) error {
 }
 
 func (m *netshManager) normalizeRule(rule RedirectRule) (RedirectRule, error) {
+	// Guard both creation and duplicate checks before invoking netsh.
+	if err := ValidateProtocol(rule.Protocol); err != nil {
+		return RedirectRule{}, err
+	}
 	normalized := rule
 	normalized.Description = ""
 	normalized.TailscalePeer = ""

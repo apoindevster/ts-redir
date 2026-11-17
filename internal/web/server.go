@@ -103,7 +103,8 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.indexTmpl.Execute(w, nil); err != nil {
+	data := struct{ Protocols []firewall.Protocol }{firewall.SupportedProtocols()}
+	if err := s.indexTmpl.Execute(w, data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -179,7 +180,8 @@ func (s *Server) createRule(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	// Return the newly created rule (with an unknown handle until reloaded).
+	// Return the refreshed list, including both entries for a combined request.
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	all, err := s.mgr.ListRedirectRules()
 	if err != nil {
@@ -244,6 +246,10 @@ type rulePayload struct {
 }
 
 func (p rulePayload) toRule() (firewall.RedirectRule, error) {
+	protocol := firewall.Protocol(strings.ToLower(strings.TrimSpace(p.Protocol)))
+	if err := firewall.ValidateProtocol(protocol); err != nil {
+		return firewall.RedirectRule{}, err
+	}
 	description := strings.TrimSpace(p.Description)
 	var matchIP net.IP
 	if strings.TrimSpace(p.MatchIP) != "" {
@@ -258,7 +264,7 @@ func (p rulePayload) toRule() (firewall.RedirectRule, error) {
 	}
 	rule := firewall.RedirectRule{
 		Description:    description,
-		Protocol:       firewall.Protocol(strings.ToLower(p.Protocol)),
+		Protocol:       protocol,
 		MatchInterface: strings.TrimSpace(p.MatchInterface),
 		MatchIP:        matchIP,
 		MatchPort:      p.MatchPort,

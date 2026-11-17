@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"sync"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
@@ -44,6 +45,7 @@ type ruleMetadata struct {
 }
 
 type nftManager struct {
+	mu               sync.Mutex
 	conn             *nftables.Conn
 	table            *nftables.Table
 	preroutingChain  *nftables.Chain
@@ -164,6 +166,12 @@ func (m *nftManager) ensureChains() error {
 }
 
 func (m *nftManager) ListRedirectRules() ([]RedirectRule, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.listRedirectRules()
+}
+
+func (m *nftManager) listRedirectRules() ([]RedirectRule, error) {
 	if m.table == nil || m.preroutingChain == nil {
 		return nil, errors.New("manager not initialised")
 	}
@@ -197,14 +205,22 @@ func (m *nftManager) ListRedirectRules() ([]RedirectRule, error) {
 }
 
 func (m *nftManager) RuleExists(rule RedirectRule) (bool, error) {
-	current, err := m.ListRedirectRules()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.ruleExists(rule)
+}
+
+func (m *nftManager) ruleExists(rule RedirectRule) (bool, error) {
+	current, err := m.listRedirectRules()
 	if err != nil {
 		return false, err
 	}
-	key := ruleKey(rule)
-	for _, r := range current {
-		if ruleKey(r) == key {
-			return true, nil
+	for _, candidate := range expandRule(rule) {
+		key := ruleKey(candidate)
+		for _, r := range current {
+			if ruleKey(r) == key {
+				return true, nil
+			}
 		}
 	}
 	return false, nil
@@ -214,19 +230,40 @@ func (m *nftManager) AddRedirectRule(rule RedirectRule) error {
 	if err := validateRule(rule); err != nil {
 		return err
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.table == nil || m.preroutingChain == nil || m.postroutingChain == nil || m.outputChain == nil {
 		return errors.New("manager not initialised")
 	}
 
-	if exists, err := m.RuleExists(rule); err != nil {
+	if exists, err := m.ruleExists(rule); err != nil {
 		return err
 	} else if exists {
 		return ErrDuplicateRule
 	}
 
+	var rules []*nftables.Rule
+	for _, candidate := range expandRule(rule) {
+		built, err := m.buildRedirectRules(candidate)
+		if err != nil {
+			return err
+		}
+		rules = append(rules, built...)
+	}
+	// Commit both protocols together, including their masquerade and output rules.
+	for _, r := range rules {
+		m.conn.AddRule(r)
+	}
+	if err := m.conn.Flush(); err != nil {
+		return wrapNFTError("flush after rule add", err)
+	}
+	return nil
+}
+
+func (m *nftManager) buildRedirectRules(rule RedirectRule) ([]*nftables.Rule, error) {
 	protoNum, err := protoToNumber(rule.Protocol)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	redirectMetadata := buildMetadata(rule, stagePrerouting)
@@ -235,15 +272,15 @@ func (m *nftManager) AddRedirectRule(rule RedirectRule) error {
 
 	redirectUserData, err := marshalMetadata(redirectMetadata)
 	if err != nil {
-		return fmt.Errorf("marshal redirect metadata: %w", err)
+		return nil, fmt.Errorf("marshal redirect metadata: %w", err)
 	}
 	masqUserData, err := marshalMetadata(masqMetadata)
 	if err != nil {
-		return fmt.Errorf("marshal masquerade metadata: %w", err)
+		return nil, fmt.Errorf("marshal masquerade metadata: %w", err)
 	}
 	outputUserData, err := marshalMetadata(outputMetadata)
 	if err != nil {
-		return fmt.Errorf("marshal output metadata: %w", err)
+		return nil, fmt.Errorf("marshal output metadata: %w", err)
 	}
 
 	preroutingExprs := append(
@@ -360,8 +397,7 @@ func (m *nftManager) AddRedirectRule(rule RedirectRule) error {
 		},
 	}
 
-	m.conn.AddRule(preroutingRule)
-	m.conn.AddRule(postroutingRule)
+	rules := []*nftables.Rule{preroutingRule, postroutingRule}
 	if rule.MatchIP != nil {
 		outputExprs := []expr.Any{
 			&expr.Payload{
@@ -424,15 +460,14 @@ func (m *nftManager) AddRedirectRule(rule RedirectRule) error {
 			UserData: outputUserData,
 			Exprs:    outputExprs,
 		}
-		m.conn.AddRule(outputRule)
+		rules = append(rules, outputRule)
 	}
-	if err := m.conn.Flush(); err != nil {
-		return wrapNFTError("flush after rule add", err)
-	}
-	return nil
+	return rules, nil
 }
 
 func (m *nftManager) DeleteRedirectRule(handle uint64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.table == nil || m.preroutingChain == nil || m.postroutingChain == nil || m.outputChain == nil {
 		return errors.New("manager not initialised")
 	}

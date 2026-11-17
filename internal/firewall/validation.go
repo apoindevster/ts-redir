@@ -26,8 +26,8 @@ func validateRule(rule RedirectRule) error {
 	if rule.TargetPort == 0 {
 		return errors.New("target port must be non-zero")
 	}
-	if rule.Protocol != ProtocolTCP && rule.Protocol != ProtocolUDP {
-		return fmt.Errorf("unsupported protocol %q", rule.Protocol)
+	if err := ValidateProtocol(rule.Protocol); err != nil {
+		return err
 	}
 	if runtime.GOOS != "windows" && len(rule.MatchInterface) > 15 {
 		return errors.New("match interface must be 15 characters or fewer")

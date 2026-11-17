@@ -45,7 +45,7 @@ type addRuleModel struct {
 	errMsg string
 }
 
-var protocolOptions = []firewall.Protocol{firewall.ProtocolTCP, firewall.ProtocolUDP}
+var protocolOptions = firewall.SupportedProtocols()
 
 func newAddRuleModel(peers []tailscale.Peer) addRuleModel {
 	description := textinput.New()
@@ -338,9 +338,13 @@ func (a addRuleModel) View() string {
 		b.WriteString("Match destination port:\n")
 		b.WriteString(a.matchPortInput.View())
 	case 4:
-		b.WriteString("Select protocol (Tab/Arrow keys to toggle):\n")
+		if len(protocolOptions) == 1 {
+			b.WriteString("Protocol (Windows supports TCP only):\n")
+		} else {
+			b.WriteString("Select protocol (Tab/Arrow keys to toggle):\n")
+		}
 		for i, p := range protocolOptions {
-			choice := strings.ToUpper(string(p))
+			choice := p.Label()
 			if i == a.protocolIndex {
 				choice = statusStyle.Render(choice)
 			}
@@ -348,6 +352,9 @@ func (a addRuleModel) View() string {
 			if i != len(protocolOptions)-1 {
 				b.WriteString("  ")
 			}
+		}
+		if protocolOptions[a.protocolIndex] == firewall.ProtocolBoth {
+			b.WriteString("\nCreates separate TCP and UDP redirects.")
 		}
 	case 5:
 		b.WriteString("Select destination Tailscale peer:\n")

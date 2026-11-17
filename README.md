@@ -32,6 +32,10 @@ I have found myself from time to time wanting to use my tailnet not for the subn
 - Create IPv4 DNAT rules that match a destination IP/port (optionally scoped to a specific ingress interface) and forward them to a peer/port, with automatic postrouting masquerade so return traffic reaches the client.
 - List and remove existing rules that were created through the application.
 - Automatically ensures the `ip ts_redir` table and `prerouting`, `postrouting`, and `output` chains exist.
+- On Linux, select **Both (TCP + UDP)** to create matching TCP and UDP redirects in one operation. They appear as separate rules and can be deleted independently. If either matching rule already exists, neither rule is added.
+- On Windows, the terminal and web interfaces offer **TCP only**. The API and firewall backend also reject UDP and combined-protocol requests because `netsh portproxy` does not support UDP.
+
+The web API accepts `"protocol": "both"` in `POST /api/rules` on Linux. The resulting rule list contains separate `"tcp"` and `"udp"` entries. Windows accepts only `"tcp"` and returns HTTP 400 for other protocols.
 
 ## Requirements
 
