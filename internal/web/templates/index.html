@@ -1,252 +1,138 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8" />
+    <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b101b" />
     <title>ts-redir — Tailnet Redirects</title>
-    <link
-      rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/@picocss/pico@2.0.0-alpha1/css/pico.min.css"
-    />
-    <style>
-      :root {
-        --bg: #05020b;
-        --card: rgba(12, 18, 26, 0.85);
-        --card-border: rgba(99, 102, 241, 0.3);
-        --accent: #f472b6;
-        --accent-2: #7dd3fc;
-        --text: #fdf2f8;
-        --muted: #c4b5fd;
-      }
-      body {
-        padding: 2rem;
-        background: var(--bg);
-        color: var(--text);
-      }
-      main.container {
-        backdrop-filter: blur(12px);
-        background: rgba(5, 2, 11, 0.85);
-        border-radius: 20px;
-        padding: 2rem;
-        margin-top: 2rem;
-        box-shadow: 0 25px 60px rgba(5, 2, 11, 0.8);
-      }
-      h1 {
-        color: var(--text);
-        font-weight: 600;
-      }
-      p {
-        color: var(--muted);
-      }
-      .card {
-        background: var(--card);
-        border: 1px solid var(--card-border);
-        border-radius: 16px;
-        padding: 1.75rem;
-        box-shadow: 0 25px 35px rgba(0, 0, 0, 0.5);
-      }
-      .card h2 {
-        color: var(--accent);
-      }
-      input,
-      select,
-      button {
-        background: rgba(255, 255, 255, 0.04);
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        border-radius: 10px;
-        color: var(--text);
-      }
-      select {
-        appearance: none;
-        background-color: rgba(15, 23, 42, 0.9);
-        padding-right: 2.5rem;
-        background-image: linear-gradient(45deg, transparent 50%, var(--accent) 50%), linear-gradient(135deg, var(--accent) 50%, transparent 50%);
-        background-position: calc(100% - 18px) calc(50% - 3px), calc(100% - 12px) calc(50% - 3px);
-        background-size: 6px 6px, 6px 6px;
-        background-repeat: no-repeat;
-      }
-      option {
-        background: #0b1120;
-        color: var(--text);
-      }
-      button {
-        background: linear-gradient(135deg, var(--accent), var(--accent-2));
-        border: none;
-        color: #05020b;
-        font-weight: 600;
-        cursor: pointer;
-      }
-      table tbody tr:hover {
-        background: rgba(125, 211, 252, 0.12);
-      }
-      .table-container {
-        overflow-x: auto;
-      }
-      .stack {
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-      }
-      .form-grid {
-        display: grid;
-        gap: 1rem;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        grid-template-areas:
-          "desc desc proto"
-          "iface match matchport"
-          "peer peer port"
-          "button button button";
-      }
-      .form-item-desc {
-        grid-area: desc;
-      }
-      .form-item-proto {
-        grid-area: proto;
-      }
-      .form-item-iface {
-        grid-area: iface;
-      }
-      .form-item-match {
-        grid-area: match;
-      }
-      .form-item-matchport {
-        grid-area: matchport;
-      }
-      .form-item-peer {
-        grid-area: peer;
-      }
-      .form-item-port {
-        grid-area: port;
-      }
-      .form-item-button {
-        grid-area: button;
-      }
-      @media (max-width: 900px) {
-        .form-grid {
-          grid-template-columns: 1fr;
-          grid-template-areas:
-            "desc"
-            "proto"
-            "iface"
-            "match"
-            "matchport"
-            "peer"
-            "port"
-            "button";
-        }
-      }
-      @media (max-width: 900px) {
-        main.container {
-          margin-top: 2rem;
-        }
-        .card {
-          padding: 1.25rem;
-        }
-        table th,
-        table td {
-          font-size: 0.85rem;
-          white-space: nowrap;
-        }
-        form label {
-          font-size: 0.95rem;
-        }
-      }
-      .error {
-        color: #f87171;
-      }
-    </style>
+    <link rel="stylesheet" href="/assets/styles.css" />
   </head>
   <body>
-    <main class="container">
-      <h1>ts-redir — Tailnet Redirects</h1>
-      <p>Manage firewall redirect rules from your browser.</p>
-
-      <div class="stack">
-        <section class="card">
-          <h2>Add Redirect</h2>
-          <div class="error" id="form-error"></div>
-          <form id="rule-form">
-            <div class="form-grid">
-              <label class="form-item-desc">
-                Description (optional)
-                <input type="text" name="description" placeholder="Reverse proxy" />
-              </label>
-              <label class="form-item-proto">
-                Protocol
-                <select name="protocol" aria-describedby="protocol-help" required>
-                  {{range .Protocols}}
-                  <option value="{{.}}">{{.Label}}</option>
-                  {{end}}
-                </select>
-                <small id="protocol-help">{{if eq (len .Protocols) 1}}Windows supports TCP only.{{else}}Both creates separate TCP and UDP redirects.{{end}}</small>
-              </label>
-              <label class="form-item-iface">
-                Ingress interface (optional)
-                <select name="match_interface" id="interface-select">
-                  <option value="">Any interface</option>
-                </select>
-              </label>
-              <label class="form-item-match">
-                Match IP (optional when interface set)
-                <input type="text" name="match_ip" placeholder="192.168.1.10" />
-              </label>
-              <label class="form-item-matchport">
-                Match port
-                <input type="number" name="match_port" min="1" max="65535" required />
-              </label>
-              <label class="form-item-peer">
-                Destination peer
-                <select name="tailscale_peer" id="peer-select" required>
-                  <option value="">-- choose peer --</option>
-                </select>
-              </label>
-              <input type="hidden" name="target_ip" id="peer-ip" />
-              <label class="form-item-port">
-                Destination port
-                <input type="number" name="target_port" min="1" max="65535" required />
-              </label>
-              <div class="form-item-button">
-                <button type="submit">Create Redirect</button>
+    <div class="shell">
+      <header class="site-header">
+        <div class="brand">
+          <svg viewBox="0 0 36 36" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 10h21m-6-6 6 6-6 6" />
+            <path class="return-path" d="M32 26H11m6-6-6 6 6 6" />
+          </svg>
+          <span>ts-redir</span>
+        </div>
+        <a class="header-link" href="#existing-rules">View existing rules</a>
+      </header>
+      <main>
+        <div class="page-heading">
+          <h1>Tailnet redirects</h1>
+          <p>Manage firewall redirect rules from your browser.</p>
+        </div>
+        <div class="workspace">
+          <section class="console add-console" aria-labelledby="add-heading">
+            <header class="section-header">
+              <h2 id="add-heading">Add redirect</h2>
+              <span class="section-note">Forward traffic to a tailnet peer</span>
+            </header>
+            <form id="rule-form">
+              <div class="form-grid">
+                <div class="field form-item-desc">
+                  <label for="description">Description <span class="optional">(optional)</span></label>
+                  <input id="description" type="text" name="description" placeholder="Reverse proxy" />
+                </div>
+                <div class="field form-item-proto">
+                  <label for="protocol">Protocol</label>
+                  <select id="protocol" name="protocol" aria-describedby="protocol-help" required>
+                    {{range .Protocols}}
+                    <option value="{{.}}">{{.Label}}</option>
+                    {{end}}
+                  </select>
+                  <small id="protocol-help">{{if eq (len .Protocols) 1}}Windows supports TCP only.{{else}}Both creates separate TCP and UDP redirects.{{end}}</small>
+                </div>
+                <div class="field form-item-iface">
+                  <label for="interface-select">Ingress interface <span class="optional">(optional)</span></label>
+                  <select name="match_interface" id="interface-select" aria-describedby="interface-error">
+                    <option value="">Any interface</option>
+                  </select>
+                  <div class="error" id="interface-error" role="alert"></div>
+                </div>
+                <div class="field form-item-match">
+                  <label for="match-ip">Match IP</label>
+                  <input id="match-ip" type="text" name="match_ip" placeholder="192.168.1.10" aria-describedby="match-help" spellcheck="false" autocapitalize="off" />
+                  <small id="match-help">Optional when an ingress interface is selected.</small>
+                </div>
+                <div class="field form-item-matchport">
+                  <label for="match-port">Match port</label>
+                  <input id="match-port" type="number" name="match_port" min="1" max="65535" placeholder="8080" required />
+                </div>
+                <div class="field form-item-peer">
+                  <label for="peer-select">Destination peer</label>
+                  <select name="tailscale_peer" id="peer-select" aria-describedby="peer-error" required>
+                    <option value="">Choose a peer</option>
+                  </select>
+                  <div class="error" id="peer-error" role="alert"></div>
+                </div>
+                <input type="hidden" name="target_ip" id="peer-ip" />
+                <div class="field form-item-port">
+                  <label for="target-port">Destination port</label>
+                  <input id="target-port" type="number" name="target_port" min="1" max="65535" placeholder="80" required />
+                </div>
               </div>
-            </div>
-          </form>
-        </section>
+              <div class="error form-error" id="form-error" role="alert"></div>
+              <div class="form-actions">
+                <button type="submit" class="primary">Create redirect</button>
+                <p id="form-notice" class="notice" role="status"></p>
+              </div>
+            </form>
+          </section>
 
-        <section class="card">
-          <h2>Existing Rules</h2>
-          <div class="error" id="rules-error"></div>
-          <div class="table-container">
-            <table id="rules-table">
-              <thead>
-                <tr>
-                  <th>Source</th>
-                  <th>Destination</th>
-                  <th>Protocol</th>
-                  <th>Peer</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </section>
-      </div>
-    </main>
+          <section class="console" id="existing-rules" aria-labelledby="rules-heading">
+            <header class="section-header">
+              <div class="rules-heading">
+                <h2 id="rules-heading">Existing rules</h2>
+                <span id="rule-count" class="section-note" role="status">Loading rules…</span>
+              </div>
+              <button id="refresh-rules" class="secondary" type="button">Refresh</button>
+            </header>
+            <div class="error rules-error" id="rules-error" role="alert"></div>
+            <div class="table-container">
+              <table id="rules-table" aria-labelledby="rules-heading">
+                <thead>
+                  <tr>
+                    <th scope="col">Source</th>
+                    <th scope="col">Destination</th>
+                    <th scope="col">Protocol</th>
+                    <th scope="col">Peer</th>
+                    <th scope="col"><span class="sr-only">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr class="empty-row"><td class="empty-state" colspan="5">Loading redirect rules…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </main>
+      <footer class="site-footer">
+        <p>Changes apply to this host’s firewall.</p>
+        <div class="console-rail" aria-hidden="true"><span></span><span></span><span></span></div>
+      </footer>
+    </div>
 
     <script>
       const rulesTableBody = document.querySelector("#rules-table tbody");
       const rulesError = document.getElementById("rules-error");
+      const ruleCount = document.getElementById("rule-count");
+      const refreshButton = document.getElementById("refresh-rules");
       const form = document.getElementById("rule-form");
       const formError = document.getElementById("form-error");
+      const formNotice = document.getElementById("form-notice");
+      const submitButton = form.querySelector("button[type=submit]");
       const peerSelect = document.getElementById("peer-select");
       const ifaceSelect = document.getElementById("interface-select");
       const peerIpInput = document.getElementById("peer-ip");
+      let rulesLoaded = false;
 
       async function fetchJSON(url, options) {
         const res = await fetch(url, options);
-        if (!res.ok) {
-          throw new Error(await res.text());
-        }
+        if (!res.ok) throw new Error(await res.text());
         if (res.status === 204) return null;
         return res.json();
       }
@@ -258,97 +144,169 @@
         return `${rule.match_ip || "any"}:${rule.match_port}`;
       }
 
+      function endpointValue(label) {
+        const span = document.createElement("span");
+        span.className = "endpoint-value";
+        const split = label.lastIndexOf(":") + 1;
+        span.append(label.slice(0, split), document.createElement("wbr"), label.slice(split));
+        return span;
+      }
+
+      function renderTableMessage(title, detail) {
+        const tr = document.createElement("tr");
+        tr.className = "empty-row";
+        const td = document.createElement("td");
+        td.colSpan = 5;
+        td.className = "empty-state";
+        const strong = document.createElement("strong");
+        strong.textContent = title;
+        const p = document.createElement("p");
+        p.textContent = detail;
+        td.append(strong, p);
+        tr.appendChild(td);
+        rulesTableBody.replaceChildren(tr);
+      }
+
       function renderRules(rules) {
-        rulesTableBody.innerHTML = "";
+        rules = rules || [];
+        rulesTableBody.replaceChildren();
+        ruleCount.textContent = `${rules.length} ${rules.length === 1 ? "rule" : "rules"}`;
+        if (rules.length === 0) {
+          renderTableMessage("No redirects yet", "Create a redirect above to forward traffic to a tailnet peer.");
+          return;
+        }
         rules.forEach((rule) => {
-          const protocolLabel = (rule.protocol || "").toUpperCase();
           const tr = document.createElement("tr");
-          tr.innerHTML = `
-            <td>${sourceLabel(rule)}</td>
-            <td>${rule.target_ip}:${rule.target_port}</td>
-            <td>${protocolLabel}</td>
-            <td>${rule.tailscale_peer || ""}</td>
-            <td><button data-handle="${rule.handle}" class="secondary outline">Delete</button></td>
-          `;
+          tr.className = "rule-row";
+          const cell = (label, text) => {
+            const td = document.createElement("td");
+            td.dataset.label = label;
+            td.textContent = text;
+            tr.appendChild(td);
+            return td;
+          };
+          const source = cell("Source", "");
+          source.appendChild(endpointValue(sourceLabel(rule)));
+          const detail = [rule.description, rule.match_ip && rule.match_interface].filter(Boolean).join(" · ");
+          if (detail) {
+            const small = document.createElement("span");
+            small.className = "rule-detail";
+            small.textContent = detail;
+            source.appendChild(small);
+          }
+          cell("Destination", "").appendChild(endpointValue(`${rule.target_ip}:${rule.target_port}`));
+          const protocol = document.createElement("span");
+          protocol.className = rule.protocol === "udp" ? "protocol protocol-udp" : "protocol";
+          protocol.textContent = (rule.protocol || "").toUpperCase();
+          cell("Protocol", "").appendChild(protocol);
+          cell("Peer", rule.tailscale_peer || "—");
+          const actions = cell("Actions", "");
+          actions.className = "rule-actions";
+          const button = document.createElement("button");
+          button.type = "button";
+          button.dataset.handle = rule.handle;
+          button.className = "danger";
+          button.textContent = "Delete";
+          button.setAttribute("aria-label", `Delete ${protocol.textContent} redirect from ${sourceLabel(rule)}`);
+          actions.appendChild(button);
           rulesTableBody.appendChild(tr);
         });
       }
 
       async function loadRules() {
+        refreshButton.disabled = true;
+        refreshButton.textContent = "Refreshing…";
         try {
           rulesError.textContent = "";
-          const data = await fetchJSON("/api/rules");
-          renderRules(data);
+          renderRules(await fetchJSON("/api/rules"));
+          rulesLoaded = true;
         } catch (err) {
-          rulesError.textContent = err.message;
+          rulesError.textContent = `Could not load rules. ${err.message}`;
+          ruleCount.textContent = rulesLoaded ? "Refresh failed" : "Unavailable";
+          if (!rulesLoaded) renderTableMessage("Rules could not be loaded", "Use Refresh to try again.");
+        } finally {
+          refreshButton.disabled = false;
+          refreshButton.textContent = "Refresh";
         }
       }
 
       async function loadPeers() {
         try {
           const peers = await fetchJSON("/api/peers");
-          peers.forEach((peer) => {
+          (peers || []).forEach((peer) => {
             const ip = peer.IPs?.find((addr) => addr && addr.includes("."));
             if (!ip) return;
             const opt = document.createElement("option");
-            opt.value = peer.Name || peer.ID;
+            opt.value = peer.Name || peer.HostName || peer.ID;
             opt.dataset.ip = ip;
-            opt.textContent = `${peer.Name || peer.ID} (${ip})`;
+            opt.textContent = `${opt.value} (${ip})`;
             peerSelect.appendChild(opt);
           });
+          if (peerSelect.options.length === 1) {
+            document.getElementById("peer-error").textContent = "No IPv4 peers found. Check Tailscale and reload the page.";
+          }
         } catch (err) {
-          console.warn("failed to load peers", err);
+          document.getElementById("peer-error").textContent = `Could not load peers. Check Tailscale and reload the page. ${err.message}`;
         }
       }
 
       async function loadInterfaces() {
         try {
           const interfaces = await fetchJSON("/api/interfaces");
-          interfaces.forEach((name) => {
+          (interfaces || []).forEach((name) => {
             const opt = document.createElement("option");
             opt.value = name;
             opt.textContent = name;
             ifaceSelect.appendChild(opt);
           });
         } catch (err) {
-          console.warn("failed to load interfaces", err);
+          document.getElementById("interface-error").textContent = `Could not load interfaces. Use a match IP or reload the page. ${err.message}`;
         }
       }
 
-      peerSelect.addEventListener("change", (e) => {
-        const option = e.target.selectedOptions[0];
-        if (option && option.dataset.ip) {
-          peerIpInput.value = option.dataset.ip;
-        } else {
-          peerIpInput.value = "";
-        }
+      peerSelect.addEventListener("change", () => {
+        peerIpInput.value = peerSelect.selectedOptions[0]?.dataset.ip || "";
       });
+      refreshButton.addEventListener("click", loadRules);
 
       rulesTableBody.addEventListener("click", async (event) => {
         const button = event.target.closest("button[data-handle]");
-        if (!button) return;
-        const handle = button.dataset.handle;
+        if (!button || button.disabled) return;
         if (!confirm("Delete this redirect rule?")) return;
+        button.disabled = true;
+        button.textContent = "Deleting…";
+        rulesError.textContent = "";
         try {
-          await fetchJSON(`/api/rules/${handle}`, { method: "DELETE" });
+          await fetchJSON(`/api/rules/${button.dataset.handle}`, { method: "DELETE" });
           await loadRules();
+          refreshButton.focus();
         } catch (err) {
-          alert(err.message);
+          rulesError.textContent = `Could not delete this rule. ${err.message}`;
+        } finally {
+          button.disabled = false;
+          button.textContent = "Delete";
         }
       });
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
+        if (submitButton.disabled) return;
         formError.textContent = "";
-        const formData = new FormData(form);
-        const payload = Object.fromEntries(formData.entries());
+        formNotice.textContent = "";
+        const payload = Object.fromEntries(new FormData(form).entries());
         if (!payload.target_ip) {
           formError.textContent = "Select a destination peer to populate its IP.";
+          return;
+        }
+        if (!payload.match_ip.trim() && !payload.match_interface) {
+          formError.textContent = "Enter a match IP or select an ingress interface.";
           return;
         }
         payload.match_port = Number(payload.match_port);
         payload.target_port = Number(payload.target_port);
         payload.protocol = payload.protocol || "tcp";
+        submitButton.disabled = true;
+        submitButton.textContent = "Creating…";
         try {
           await fetchJSON("/api/rules", {
             method: "POST",
@@ -356,9 +314,14 @@
             body: JSON.stringify(payload),
           });
           form.reset();
+          peerIpInput.value = "";
+          formNotice.textContent = payload.protocol === "both" ? "TCP and UDP redirects created." : "Redirect created.";
           await loadRules();
         } catch (err) {
           formError.textContent = err.message;
+        } finally {
+          submitButton.disabled = false;
+          submitButton.textContent = "Create redirect";
         }
       });
 

@@ -3,7 +3,7 @@ package web
 import (
 	"bufio"
 	"context"
-	_ "embed"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -24,6 +24,9 @@ import (
 
 //go:embed templates/index.html
 var indexHTML string
+
+//go:embed assets
+var staticAssets embed.FS
 
 type Server struct {
 	mgr       firewall.Manager
@@ -55,23 +58,28 @@ func (s *Server) Run() error {
 		return err
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.handleIndex)
-	mux.HandleFunc("/api/rules", s.handleRules)
-	mux.HandleFunc("/api/rules/", s.handleRuleByID)
-	mux.HandleFunc("/api/peers", s.handlePeers)
-	mux.HandleFunc("/api/interfaces", s.handleInterfaces)
-	mux.HandleFunc("/api/status", s.handleStatus)
-
 	s.server = &http.Server{
 		Addr:    addr,
-		Handler: withLogging(mux),
+		Handler: s.handler(),
 	}
 
 	if err := s.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil
+}
+
+func (s *Server) handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", s.handleIndex)
+	mux.Handle("/assets/", http.FileServer(http.FS(staticAssets)))
+	mux.HandleFunc("/api/rules", s.handleRules)
+	mux.HandleFunc("/api/rules/", s.handleRuleByID)
+	mux.HandleFunc("/api/peers", s.handlePeers)
+	mux.HandleFunc("/api/interfaces", s.handleInterfaces)
+	mux.HandleFunc("/api/status", s.handleStatus)
+
+	return withLogging(mux)
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {

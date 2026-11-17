@@ -1,11 +1,13 @@
 package web
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -127,5 +129,39 @@ func TestDuplicateReturnsConflict(t *testing.T) {
 		if preexisting && len(mgr.added) != 0 {
 			t.Fatal("known duplicate reached creation")
 		}
+	}
+}
+
+func TestWebAssetsAreSelfContained(t *testing.T) {
+	s, err := NewServer(&testManager{}, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := s.handler()
+	index := httptest.NewRecorder()
+	handler.ServeHTTP(index, httptest.NewRequest(http.MethodGet, "/", nil))
+	if !strings.Contains(index.Body.String(), `href="/assets/styles.css"`) || strings.Contains(index.Body.String(), "https://cdn.") {
+		t.Fatal("index must load its embedded stylesheet without a CDN")
+	}
+	css := httptest.NewRecorder()
+	handler.ServeHTTP(css, httptest.NewRequest(http.MethodGet, "/assets/styles.css", nil))
+	if css.Code != http.StatusOK || !strings.HasPrefix(css.Header().Get("Content-Type"), "text/css") {
+		t.Fatalf("stylesheet response: %d %s", css.Code, css.Header().Get("Content-Type"))
+	}
+	fonts := regexp.MustCompile(`url\("(fonts/[^"\)]+)"\)`).FindAllStringSubmatch(css.Body.String(), -1)
+	if len(fonts) == 0 {
+		t.Fatal("stylesheet has no bundled fonts")
+	}
+	for _, font := range fonts {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/assets/"+font[1], nil))
+		if w.Code != http.StatusOK || !bytes.HasPrefix(w.Body.Bytes(), []byte("wOF2")) {
+			t.Errorf("%s did not return a WOFF2 font: %d", font[1], w.Code)
+		}
+	}
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/assets/missing.css", nil))
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("missing asset status: %d", w.Code)
 	}
 }
