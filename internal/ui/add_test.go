@@ -40,3 +40,17 @@ func TestProtocolSelection(t *testing.T) {
 		t.Fatal("protocol selection did not advance to peers")
 	}
 }
+
+func TestInterfaceNameLimitsMatchPlatform(t *testing.T) {
+	m := newAddRuleModel(nil)
+	m.step = 1
+	m.matchIfaceInput.SetValue("Ethernet Connection 2")
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if runtime.GOOS == "windows" {
+		if m.step != 2 || m.matchIface != "Ethernet Connection 2" {
+			t.Fatal("Windows adapter name was truncated or rejected")
+		}
+	} else if m.step != 1 || m.errMsg == "" {
+		t.Fatal("Linux interface length was not validated")
+	}
+}

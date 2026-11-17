@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"net"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -76,15 +77,19 @@ func newAddRuleModel(peers []tailscale.Peer) addRuleModel {
 	matchIface.Placeholder = "Ingress interface (optional, e.g. eno1)"
 	matchIface.Prompt = "> "
 	matchIface.CharLimit = 16
+	if runtime.GOOS == "windows" {
+		matchIface.CharLimit = 256
+	}
 	matchIface.Width = len(matchIface.Placeholder)
 
 	delegate := list.NewDefaultDelegate()
-	delegate.ShowDescription = false
+	delegate.ShowDescription = true
 	l := list.New(peerItems(peers), delegate, 50, 7)
 	l.Title = "Select destination peer"
 	l.SetShowHelp(false)
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(false)
+	l.DisableQuitKeybindings()
 
 	return addRuleModel{
 		descriptionInput: description,
@@ -107,15 +112,10 @@ func (a *addRuleModel) SetSize(width, height int) {
 	a.width = width
 	a.height = height
 
-	listWidth := width - 6
-	if listWidth < 30 {
-		listWidth = 30
+	a.peerList.SetSize(max(1, width), max(1, height-7))
+	for _, input := range []*textinput.Model{&a.descriptionInput, &a.matchIfaceInput, &a.matchIPInput, &a.matchPortInput, &a.targetPortInput} {
+		input.Width = max(1, width-4)
 	}
-	listHeight := height - 10
-	if listHeight < 5 {
-		listHeight = 5
-	}
-	a.peerList.SetSize(listWidth, listHeight)
 }
 
 func (a *addRuleModel) Init() tea.Cmd {
@@ -128,6 +128,22 @@ func (a *addRuleModel) Update(msg tea.Msg) tea.Cmd {
 		switch msg.String() {
 		case "esc":
 			a.canceled = true
+			return nil
+		case "ctrl+b":
+			if a.step > 0 {
+				a.step--
+				a.errMsg = ""
+			}
+			switch a.step {
+			case 0:
+				return a.descriptionInput.Focus()
+			case 1:
+				return a.matchIfaceInput.Focus()
+			case 2:
+				return a.matchIPInput.Focus()
+			case 3:
+				return a.matchPortInput.Focus()
+			}
 			return nil
 		}
 	}
@@ -199,7 +215,7 @@ func (a *addRuleModel) updateInterface(msg tea.Msg) tea.Cmd {
 
 	if key, ok := msg.(tea.KeyMsg); ok && key.Type == tea.KeyEnter {
 		iface := strings.TrimSpace(a.matchIfaceInput.Value())
-		if len(iface) > 15 {
+		if runtime.GOOS != "windows" && len(iface) > 15 {
 			a.errMsg = "interface must be 15 characters or fewer"
 			return cmd
 		}
@@ -314,8 +330,15 @@ func (a *addRuleModel) Canceled() bool {
 }
 
 func (a *addRuleModel) SetPeers(peers []tailscale.Peer) {
+	selected, _ := a.peerList.SelectedItem().(peerItem)
 	a.peers = peers
 	a.peerList.SetItems(peerItems(peers))
+	for i, item := range a.peerList.Items() {
+		if p, ok := item.(peerItem); ok && p.ip.Equal(selected.ip) {
+			a.peerList.Select(i)
+			break
+		}
+	}
 	a.SetSize(a.width, a.height)
 }
 
@@ -407,16 +430,18 @@ func (a *addRuleModel) resetPeerList() tea.Cmd {
 }
 
 type peerItem struct {
-	name string
-	ip   net.IP
+	name   string
+	label  string
+	detail string
+	ip     net.IP
 }
 
 func (p peerItem) Title() string {
-	return fmt.Sprintf("%s", p.name)
+	return p.label
 }
 
 func (p peerItem) Description() string {
-	return p.ip.String()
+	return p.detail
 }
 
 func (p peerItem) FilterValue() string {
@@ -430,14 +455,7 @@ func peerItems(peers []tailscale.Peer) []list.Item {
 		if ip == nil {
 			continue
 		}
-		name := peer.Name
-		if name == "" {
-			name = peer.ID
-		}
-		if !peer.Online {
-			name = fmt.Sprintf("%s (offline)", name)
-		}
-		items = append(items, peerItem{name: name, ip: ip})
+		items = append(items, peerItem{name: peerName(peer), label: (tailnetItem{peer: peer}).Title(), detail: (tailnetItem{peer: peer}).Description(), ip: ip})
 	}
 	return items
 }

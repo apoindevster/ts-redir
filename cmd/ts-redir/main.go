@@ -160,7 +160,7 @@ func main() {
 		defer stop()
 		<-ctx.Done()
 	} else {
-		if _, err := tea.NewProgram(ui.NewModelWithManager(p.app.Manager), tea.WithAltScreen()).Run(); err != nil {
+		if _, err := tea.NewProgram(ui.NewModelWithApplication(p.app, iface), tea.WithAltScreen()).Run(); err != nil {
 			log.Printf("terminal UI: %v", err)
 		}
 	}

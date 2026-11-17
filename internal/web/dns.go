@@ -18,27 +18,10 @@ func (s *Server) handleLANAddresses(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	type address struct {
-		IP        string `json:"ip"`
-		Interface string `json:"interface"`
-	}
-	addresses := []address{}
-	ifaces, err := net.Interfaces()
+	addresses, err := app.LANAddresses(s.ifaceName)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
-	}
-	for _, iface := range ifaces {
-		if iface.Name == s.ifaceName || iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
-			continue
-		}
-		addrs, _ := iface.Addrs()
-		for _, addr := range addrs {
-			ip, _, err := net.ParseCIDR(addr.String())
-			if err == nil && ip.To4() != nil && ip.IsPrivate() {
-				addresses = append(addresses, address{ip.String(), iface.Name})
-			}
-		}
 	}
 	writeJSON(w, addresses)
 }

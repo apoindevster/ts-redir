@@ -68,12 +68,29 @@ To launch the modern web UI (which only binds to your Tailscale interface), pass
 sudo go run ./cmd/ts-redir/main.go --web --ts-interface tailscale0 --port 8080
 ```
 
-Within the UI:
+The terminal UI shares the web UI's persistent configuration and DNS runtime.
+Switch views with `Tab` / `Shift+Tab` or the number keys:
 
-- `a` — add a new redirect rule
-- `d` — delete the selected rule
-- `r` — refresh nftables rules
-- `q` — quit
+| Key | View | Actions |
+| --- | --- | --- |
+| `1` | Redirects | `a` add, `d` delete, `Enter` details, `r` refresh |
+| `2` | Local DNS | View listener/upstreams/errors/config path; `e` edit enable/disable and LAN address |
+| `3` | Hostnames | `a` associate a name with a TCP redirect, `d` remove a name, `Enter` details |
+| `4` | Checks | `Enter` or `r` run setup checks, `c` cancel |
+| `5` | Tailnet | Peer details including self/online/OS/DNS/exit-node information; `s` full Tailscale status |
+
+Use arrow keys to select entries, and `Enter` to advance a form or save its last
+step. `Ctrl+B` goes back in the redirect wizard; `Backspace` goes back from a DNS
+address or hostname redirect picker. `Esc` cancels a form without saving. Failed
+saves keep your input. Deletion requires `y`; `Enter` does not confirm it.
+
+`?` opens setup and service guidance. Details, DNS status, checks and help scroll
+with arrow keys, Page Up/Down, Home and End. `q` quits outside forms; `Ctrl+C`
+quits anywhere, waiting for an in-progress save to finish. The TUI supports
+terminals of at least 40 columns by 16 rows; 80 by 24 or larger is recommended.
+Rules, DNS status and peers refresh every 30 seconds. Exiting stops the DNS
+listener; use the background service for continuous operation. Stop that service
+before opening the TUI with the same configuration file.
 
 Use `ts-redir -version` to print the build metadata that GoReleaser injects into release artifacts.
 
@@ -82,7 +99,7 @@ On Linux, live rules are identified using nftables `UserData`, so only ts-redir 
 
 ## Local DNS and reverse proxies
 
-Use the **Local DNS** section of the web UI to make existing service domains
+Use **Local DNS** in the web UI or terminal UI (`2`) to make existing service domains
 resolve to this machine on your LAN. The browser keeps using the original URL,
 so TCP forwarding preserves its TLS SNI and HTTP Host header. The destination
 reverse proxy still handles HTTPS and certificates; ts-redir does not terminate
