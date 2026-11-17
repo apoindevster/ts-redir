@@ -55,3 +55,13 @@ confirm deletion. Refresh updates existing rules without clearing form input.
 TailBridge's reference is its native touchscreen, not a browser layout to copy.
 TailShare supplies the web typography and control vocabulary. Neither project's
 source files are modified by this shared styling work.
+
+
+Local DNS follows the rules table in a separate console section. Its desktop
+layout pairs listener settings with DHCP and upstream guidance, then provides a
+hostname-to-redirect form, a compact hostname list, and explicit setup checks.
+At narrow widths the settings and hostname form become a single column. Keep
+all names and addresses wrap-safe. DNS is opt-in; distinguish a disabled listener
+from an unavailable one, and explain that clients must use the LAN DNS address.
+Several names can reference one redirect. A hostname removal keeps that redirect,
+while deleting a referenced redirect requires removing its names first.

@@ -69,7 +69,17 @@ func NewModel() Model {
 
 // Init implements tea.Model.
 func (m Model) Init() tea.Cmd {
+	if m.manager != nil {
+		return tea.Batch(func() tea.Msg { return initResultMsg{manager: m.manager} }, schedulePeerRefresh())
+	}
 	return tea.Batch(initManagerCmd(), schedulePeerRefresh())
+}
+
+// NewModelWithManager shares the application's persistent manager and DNS runtime.
+func NewModelWithManager(manager firewall.Manager) Model {
+	m := NewModel()
+	m.manager = manager
+	return m
 }
 
 // Update implements tea.Model.

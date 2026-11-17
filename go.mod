@@ -9,8 +9,10 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/google/nftables v0.3.0
+	github.com/kardianos/service v1.2.4
 	github.com/mdlayher/netlink v1.7.3-0.20250113171957-fbb4dce95f42
-	golang.org/x/sys v0.36.0
+	github.com/miekg/dns v1.1.72
+	golang.org/x/sys v0.39.0
 )
 
 require (
@@ -33,7 +35,9 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sahilm/fuzzy v0.1.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/net v0.33.0 // indirect
-	golang.org/x/sync v0.11.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/mod v0.31.0 // indirect
+	golang.org/x/net v0.48.0 // indirect
+	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/text v0.32.0 // indirect
+	golang.org/x/tools v0.40.0 // indirect
 )

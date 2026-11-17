@@ -17,12 +17,12 @@
           </svg>
           <span>ts-redir</span>
         </div>
-        <a class="header-link" href="#existing-rules">View existing rules</a>
+        <nav aria-label="Page sections"><a class="header-link" href="#existing-rules">Redirects</a><a class="header-link" href="#local-dns">Local DNS</a></nav>
       </header>
       <main>
         <div class="page-heading">
           <h1>Tailnet redirects</h1>
-          <p>Manage firewall redirect rules from your browser.</p>
+          <p>Forward traffic and keep your service hostnames working on this network.</p>
         </div>
         <div class="workspace">
           <section class="console add-console" aria-labelledby="add-heading">
@@ -108,14 +108,61 @@
               </table>
             </div>
           </section>
+          <section class="console" id="local-dns" aria-labelledby="dns-heading">
+            <header class="section-header">
+              <div class="rules-heading"><h2 id="dns-heading">Local DNS</h2><span id="dns-status" class="section-note" role="status">Loading DNS settings…</span></div>
+              <button id="refresh-dns" class="secondary" type="button">Refresh</button>
+            </header>
+            <div class="error rules-error" id="dns-error" role="alert"></div>
+            <div class="dns-layout">
+              <form id="dns-form">
+                <fieldset id="dns-fields" disabled>
+                  <legend class="sr-only">DNS listener settings</legend>
+                  <div class="field">
+                    <label for="dns-ip">LAN address for DNS</label>
+                    <select id="dns-ip" required aria-describedby="dns-ip-help"><option value="">Choose a LAN address</option></select>
+                    <small id="dns-ip-help">Use a fixed address or DHCP reservation. DNS uses UDP and TCP port 53.</small>
+                  </div>
+                  <label class="checkbox-field"><input id="dns-enabled" type="checkbox" /> Enable DNS forwarding</label>
+                  <button type="submit" class="primary">Save DNS settings</button>
+                </fieldset>
+                <p id="dns-notice" class="notice" role="status"></p>
+              </form>
+              <div class="dns-guidance">
+                <h3>Connect this network</h3>
+                <p>Set the DHCP DNS server to <strong id="dns-client-address">the LAN address selected here</strong>, then renew client leases. Keep the router’s upstream DNS independent of ts-redir to avoid a loop.</p>
+                <p>Clients must use this DNS server. A public secondary resolver or a browser’s custom encrypted DNS can bypass these hostname mappings.</p>
+                <dl class="dns-facts"><dt>Network upstream DNS</dt><dd id="dns-upstreams">Discovering…</dd><dt>Saved configuration</dt><dd id="dns-config-path">Loading…</dd></dl>
+                <details><summary>Keep DNS running after reboot</summary><p>Install the built binary as a service with <code>ts-redir --service install</code>, then <code>ts-redir --service start</code>, using Administrator or root privileges. Include your <code>--config</code>, <code>--ts-interface</code> and <code>--port</code> options when installing if they differ from the defaults. Stop the foreground instance before starting the service.</p></details>
+              </div>
+            </div>
+            <div class="dns-hostnames">
+              <h3>Service hostnames</h3>
+              <p class="muted">Create a TCP redirect with a specific LAN IP above, then associate your hostnames here. Use port 443 for normal HTTPS URLs. Several names can share one redirect.</p>
+              <form id="hostname-form" class="hostname-form">
+                <div class="field"><label for="hostname">Hostname</label><input id="hostname" placeholder="photos.example.com" required maxlength="254" spellcheck="false" autocapitalize="off" autocomplete="off" /></div>
+                <div class="field"><label for="hostname-rule">TCP redirect</label><select id="hostname-rule" required><option value="">Create a TCP redirect first</option></select></div>
+                <button type="submit" class="primary" id="hostname-submit" disabled>Add hostname</button>
+              </form>
+              <p id="hostname-error" class="error" role="alert"></p>
+              <p id="hostname-notice" class="notice" role="status"></p>
+              <ul id="hostname-list" class="hostname-list" aria-label="Configured hostnames"><li class="muted">Loading hostnames…</li></ul>
+            </div>
+            <div class="dns-diagnostics">
+              <div class="diagnostic-heading"><h3>Setup checks</h3><button id="run-checks" class="secondary" type="button">Run checks</button></div>
+              <p class="muted">Checks DNS answers and destination connectivity from this machine. Confirm DNS resolution and access on a separate LAN client too. Allow LAN traffic to DNS port 53 and your forwarded ports in the host firewall.</p>
+              <ul id="diagnostic-list" class="diagnostic-list" aria-live="polite"></ul>
+            </div>
+          </section>
         </div>
       </main>
       <footer class="site-footer">
-        <p>Changes apply to this host’s firewall.</p>
+        <p>Redirects and DNS settings are saved on this machine. Keep ts-redir running when DNS is enabled.</p>
         <div class="console-rail" aria-hidden="true"><span></span><span></span><span></span></div>
       </footer>
     </div>
 
+    <script src="/assets/dns.js"></script>
     <script>
       const rulesTableBody = document.querySelector("#rules-table tbody");
       const rulesError = document.getElementById("rules-error");
@@ -169,6 +216,7 @@
 
       function renderRules(rules) {
         rules = rules || [];
+        updateHostnameRules(rules);
         rulesTableBody.replaceChildren();
         ruleCount.textContent = `${rules.length} ${rules.length === 1 ? "rule" : "rules"}`;
         if (rules.length === 0) {
@@ -204,7 +252,7 @@
           actions.className = "rule-actions";
           const button = document.createElement("button");
           button.type = "button";
-          button.dataset.handle = rule.handle;
+          button.dataset.handle = rule.handle_id;
           button.className = "danger";
           button.textContent = "Delete";
           button.setAttribute("aria-label", `Delete ${protocol.textContent} redirect from ${sourceLabel(rule)}`);
@@ -328,6 +376,7 @@
       loadInterfaces();
       loadPeers();
       loadRules();
+      loadDNS(true);
     </script>
   </body>
 </html>

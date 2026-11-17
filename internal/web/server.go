@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/apoindevster/ts-redir/internal/app"
 	"github.com/apoindevster/ts-redir/internal/firewall"
 	"github.com/apoindevster/ts-redir/internal/tailscale"
 )
@@ -29,6 +30,7 @@ var indexHTML string
 var staticAssets embed.FS
 
 type Server struct {
+	app       *app.App
 	mgr       firewall.Manager
 	ifaceName string
 	port      int
@@ -53,17 +55,43 @@ func NewServer(mgr firewall.Manager, iface string, port int) (*Server, error) {
 }
 
 func (s *Server) Run() error {
+	return s.RunContext(context.Background())
+}
+
+func (s *Server) RunContext(ctx context.Context) error {
 	addr, err := s.bindAddr()
 	if err != nil {
 		return err
 	}
 
-	s.server = &http.Server{
-		Addr:    addr,
-		Handler: s.handler(),
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
 	}
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           s.handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	s.mu.Lock()
+	s.server = server
+	s.mu.Unlock()
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = server.Shutdown(shutdownCtx)
+		case <-done:
+		}
+	}()
 
-	if err := s.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil
@@ -78,15 +106,23 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("/api/peers", s.handlePeers)
 	mux.HandleFunc("/api/interfaces", s.handleInterfaces)
 	mux.HandleFunc("/api/status", s.handleStatus)
+	mux.HandleFunc("/api/dns", s.handleDNS)
+	mux.HandleFunc("/api/hostnames", s.handleHostnames)
+	mux.HandleFunc("/api/hostnames/", s.handleHostnames)
+	mux.HandleFunc("/api/diagnostics", s.handleDiagnostics)
+	mux.HandleFunc("/api/lan-addresses", s.handleLANAddresses)
 
 	return withLogging(mux)
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
-	if s.server == nil {
+	s.mu.Lock()
+	server := s.server
+	s.mu.Unlock()
+	if server == nil {
 		return nil
 	}
-	return s.server.Shutdown(ctx)
+	return server.Shutdown(ctx)
 }
 
 func (s *Server) bindAddr() (string, error) {
@@ -144,6 +180,8 @@ func (s *Server) handleRuleByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err := s.mgr.DeleteRedirectRule(handle); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -161,8 +199,10 @@ func (s *Server) listRules(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createRule(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	var payload rulePayload
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&payload); err != nil {
 		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
 		return
 	}
@@ -297,6 +337,7 @@ func withLogging(next http.Handler) http.Handler {
 
 type apiRule struct {
 	Handle         uint64 `json:"handle"`
+	HandleID       string `json:"handle_id"`
 	Description    string `json:"description"`
 	Protocol       string `json:"protocol"`
 	MatchInterface string `json:"match_interface,omitempty"`
@@ -312,6 +353,7 @@ func toAPIRules(rules []firewall.RedirectRule) []apiRule {
 	for _, r := range rules {
 		out = append(out, apiRule{
 			Handle:         r.Handle,
+			HandleID:       strconv.FormatUint(r.Handle, 10),
 			Description:    r.Description,
 			Protocol:       strings.ToLower(string(r.Protocol)),
 			MatchInterface: r.MatchInterface,

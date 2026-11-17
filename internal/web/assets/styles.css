@@ -169,3 +169,43 @@ td:first-child, td:nth-child(2) { font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; }
 }
+
+/* DNS setup extends the existing console, with forms beside network guidance. */
+.site-header nav { display: flex; gap: 24px; }
+h3 { margin: 0 0 12px; font-size: 17px; font-weight: 600; }
+.muted { color: var(--muted); font-size: 14px; line-height: 1.6; max-width: 75ch; }
+.dns-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; padding: 24px; }
+.dns-layout fieldset { padding: 0; border: 0; margin: 0; min-width: 0; }
+.checkbox-field { display: flex; align-items: center; gap: 12px; margin: 20px 0; min-height: 44px; cursor: pointer; }
+.checkbox-field input { width: 20px; min-height: 20px; height: 20px; accent-color: var(--cyan); flex-shrink: 0; }
+.dns-guidance p { font-size: 14px; line-height: 1.6; color: var(--muted); margin-bottom: 12px; max-width: 70ch; }
+.dns-guidance strong { color: var(--text); }
+.dns-facts { margin: 20px 0; font-size: 13px; line-height: 1.6; }
+.dns-facts dt { color: var(--muted); margin-top: 10px; }
+.dns-facts dd { margin: 2px 0 0; overflow-wrap: anywhere; }
+summary { cursor: pointer; padding: 10px 0; font-size: 14px; color: var(--cyan); }
+code { overflow-wrap: anywhere; }
+.dns-hostnames, .dns-diagnostics { border-top: 1px solid var(--line); padding: 24px; }
+.hostname-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr) auto; gap: 20px; align-items: end; margin: 22px 0 16px; }
+.hostname-list, .diagnostic-list { padding: 0; list-style: none; margin: 20px 0 0; }
+.hostname-list li { display: flex; gap: 20px; align-items: center; justify-content: space-between; border-top: 1px solid var(--line); padding: 16px 0; }
+.hostname-list li > div { min-width: 0; overflow-wrap: anywhere; }
+.hostname-list strong { font-size: 15px; font-weight: 500; }
+.hostname-list li:last-child { padding-bottom: 0; }
+.diagnostic-heading { display: flex; gap: 16px; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.diagnostic-heading h3 { margin: 0; }
+.diagnostic-list li { padding: 12px 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+#dns-notice { margin-top: 12px; }
+@media (max-width: 900px) {
+  .hostname-form { grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); }
+  .hostname-form button { justify-self: start; }
+}
+@media (max-width: 700px) {
+  .site-header nav { gap: 16px; }
+  .dns-layout { grid-template-columns: 1fr; gap: 28px; padding: 20px 16px; }
+  .dns-hostnames, .dns-diagnostics { padding: 20px 16px; }
+  .hostname-form { grid-template-columns: minmax(0, 1fr); }
+  .hostname-form button { justify-self: stretch; }
+  .hostname-list li { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .hostname-list button { align-self: stretch; }
+}

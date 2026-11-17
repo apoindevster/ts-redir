@@ -7,6 +7,9 @@ import (
 	"runtime"
 )
 
+// ValidateRule checks a rule without changing the host firewall.
+func ValidateRule(rule RedirectRule) error { return validateRule(rule) }
+
 func validateRule(rule RedirectRule) error {
 	if rule.MatchIP == nil {
 		if rule.MatchInterface == "" {
